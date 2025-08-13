@@ -1,12 +1,21 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="Dyanimic Route Rationalisation API",
     description="API backend for predicting optimal routes based on traffic conditions",
     version="1.0.0"
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+) #replace * with frontend urls kenny
 
 class RouteRequest(BaseModel):
     start_point: str
