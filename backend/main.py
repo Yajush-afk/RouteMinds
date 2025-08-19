@@ -15,7 +15,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-) #replace * with frontend urls kenny
+) #replace * with frontend urls 
 
 class RouteRequest(BaseModel):
     start_point: str
@@ -36,8 +36,4 @@ class RouteResponse(BaseModel):
 def health_check():
     return{"status":"Backend is working"}
 
-# @app.post("/predict", response_model=RouteResponse)
-# def predict_route(data: RouteRequest):
-#     #define routes, created a temporary placeholder
-#     return RouteResponse()
 
