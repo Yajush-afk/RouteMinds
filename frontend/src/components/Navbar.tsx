@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { NAV_LINKS } from "@/constants/nav";
 import logo from "@/assets/logo.svg";
-import ThemeToggle from "../shared/ThemeSwitch";
-
+// import ThemeToggle from "@/components/shared/ThemeSwitch";
+import { ModeToggle } from "./shared/mode-toggle";
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -30,7 +30,7 @@ const Navbar = () => {
               ))}
             </ul>
             <div className="hidden lg:flex justify-center space-x-4 items-center">
-              <ThemeToggle />
+              <ModeToggle />
               <Link to={"/login"}>
                 <Button variant="outline">Login</Button>
               </Link>

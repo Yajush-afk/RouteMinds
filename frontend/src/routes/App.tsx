@@ -1,13 +1,17 @@
-import HeroSection from "@/components/layout/HeroSection";
-import Navbar from "@/components/layout/Navbar";
+import { ThemeProvider } from "@/components/theme-provider";
+import Home from "@/pages/Home";
+import Login from "@/pages/Login";
+import { Route, Routes } from "react-router-dom";
+import NotFoundPage from "@/pages/NotFoundPage";
 function App() {
   return (
-    <>
-      <Navbar />
-      <main>
-        <HeroSection />
-      </main>
-    </>
+    <ThemeProvider defaultTheme="system" storageKey="theme">
+      <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </ThemeProvider>
   );
 }
 
