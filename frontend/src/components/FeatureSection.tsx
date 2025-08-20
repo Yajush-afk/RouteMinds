@@ -9,10 +9,11 @@ function FeatureSection() {
         </span>
         <h2 className="mt-4 text-3xl font-bold">Our Amazing Features</h2>
       </div>
-      <CardComponent />
-      <CardComponent />
-      <CardComponent />
-
+      <div className="flex flex-row items-center justify-center gap-4">
+        <CardComponent />
+        <CardComponent />
+        <CardComponent />
+      </div>
     </div>
   </>
   );
