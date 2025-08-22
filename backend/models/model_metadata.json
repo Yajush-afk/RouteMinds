@@ -1,0 +1,29 @@
+{
+    "model_type": "RandomForest",
+    "feature_columns": [
+        "route_encoded",
+        "stop_sequence",
+        "day_of_week",
+        "hour_of_day",
+        "holiday_flag",
+        "stop_lat",
+        "stop_lon"
+    ],
+    "feature_names": [
+        "Route",
+        "Stop Sequence",
+        "Day of Week",
+        "Hour of Day",
+        "Holiday Flag",
+        "Latitude",
+        "Longitude"
+    ],
+    "label_encoder_classes": [
+        "nan"
+    ],
+    "performance": {
+        "test_mae": 7.559780828809374,
+        "test_mse": 75.98695402350138,
+        "test_r2": -0.000911116261913758
+    }
+}
