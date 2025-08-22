@@ -1,0 +1,20 @@
+name: routeminds
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - joblib
+  - matplotlib
+  - seaborn
+  - xgboost
+  - uvicorn
+  - fastapi
+  - pydantic>=2.0.0
+  - jupyterlab
+  - pip:
+      - python-multipart
