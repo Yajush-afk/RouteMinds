@@ -8,6 +8,7 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -18,36 +19,76 @@ export function LoginForm({
 }: React.ComponentProps<"div">) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setMessage(null);
+    setLoading(true);
+
     try {
       const userCred = await signInWithEmailAndPassword(auth, email, password);
       console.log("Logged in:", userCred.user);
-      alert("Login successful!");
+      setMessage("Login successful!");
     } catch (err: any) {
-      alert(err.message);
+      console.error("Login error:", err); // 🔍 logs the exact error code
+
+      switch (err.code) {
+        case "auth/invalid-credential": // new Firebase error for wrong creds
+          setError("Incorrect password. Try again.");
+          break;
+        case "auth/user-disabled":
+          setError("This account has been disabled.");
+          break;
+        case "auth/too-many-requests":
+          setError("Too many failed attempts. Please try again later.");
+          break;
+        case "auth/network-request-failed":
+          setError("Network error. Check your internet connection.");
+          break;
+        default:
+          setError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError("Please enter your email first.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMessage("Password reset email sent! Check your inbox.");
+    } catch (err: any) {
+      setError("Unable to send reset email. Please check the email address.");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    setError(null);
+    setMessage(null);
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      console.log("Google user:", result.user);
+      await signInWithPopup(auth, provider);
     } catch (err: any) {
-      alert(err.message);
+      setError("Google login failed. Try again.");
     }
   };
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleLogin(e);
-        }}
-      >
+      <form onSubmit={handleLogin}>
         <div className="flex flex-col gap-6">
           <div className="flex flex-col items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-md">
@@ -67,10 +108,11 @@ export function LoginForm({
             <Input
               id="email"
               type="email"
-              placeholder="m@example.com"
+              placeholder="johndoe@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              className="bg-transparent focus:bg-transparent"
             />
             <Label htmlFor="password">Password</Label>
             <Input
@@ -80,11 +122,25 @@ export function LoginForm({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              className="bg-transparent focus:bg-transparent"
             />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                className="text-sm text-primary hover:underline"
+                disabled={loading}
+              >
+                Forgot password?
+              </button>
+            </div>
           </div>
 
-          <Button type="submit" className="w-full">
-            Login
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          {message && <p className="text-sm text-green-600">{message}</p>}
+
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Processing..." : "Login"}
           </Button>
 
           <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
