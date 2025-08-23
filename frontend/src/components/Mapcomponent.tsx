@@ -37,7 +37,7 @@ const MapComponent: React.FC = () => {
         mapContainerStyle={containerStyle}
         center={origin}
         zoom={12}
-        onLoad={handleMapLoad} // <-- only call DirectionsService after map loads
+        onLoad={handleMapLoad} 
       >
         <Marker position={origin} />
         <Marker position={destination} />

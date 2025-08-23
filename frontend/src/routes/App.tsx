@@ -6,15 +6,15 @@ import NotFoundPage from "@/pages/NotFoundPage";
 import { Route, Routes, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import BackendCheck from "@/components/BackendCheck";
-import ProtectedRoute from "@/components/ProtectedRoute";
-// import MapComponent from "@/components/Mapcomponent";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AIMap from "@/components/AIMap";
+import { Dashboard } from "@/pages/Dashboard";
 
 const optimizedRoute: [number, number][] = [
-  [28.6139, 77.2090], // Start point (Delhi)
-  [28.6200, 77.2100], // Waypoint
-  [28.6350, 77.2200], // Waypoint
-  [28.6500, 77.2300], // End point
+  [28.6139, 77.209], // Start point (Delhi)
+  [28.62, 77.21], // Waypoint
+  [28.635, 77.22], // Waypoint
+  [28.65, 77.23], // End point
 ];
 
 function App() {
@@ -50,8 +50,16 @@ function App() {
         <Route
           path="/map"
           element={
-            <ProtectedRoute user={user}>
-              <AIMap waypoints={optimizedRoute} zoom={12} />
+            <ProtectedRoute>
+              <AIMap waypoints={optimizedRoute} zoom={16} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
             </ProtectedRoute>
           }
         />

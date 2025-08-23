@@ -34,10 +34,10 @@ export function LoginForm({
       console.log("Logged in:", userCred.user);
       setMessage("Login successful!");
     } catch (err: any) {
-      console.error("Login error:", err); // 🔍 logs the exact error code
+      console.error("Login error:", err); 
 
       switch (err.code) {
-        case "auth/invalid-credential": // new Firebase error for wrong creds
+        case "auth/invalid-credential":
           setError("Incorrect password. Try again.");
           break;
         case "auth/user-disabled":
