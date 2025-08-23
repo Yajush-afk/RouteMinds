@@ -5,7 +5,7 @@ const FeatureSection = () => {
     <div className="relative mt-20 border-border min-h-[800px] bg-background">
       {/* Header Section */}
       <div className="text-center max-w-4xl mx-auto px-4">
-        <span className="bg-primary text-primary-foreground rounded-full h-6 text-sm font-medium px-3 py-1.5 uppercase tracking-wide">
+        <span className="bg-primary rounded-full h-6 text-sm font-medium px-3 py-1.5 uppercase tracking-wide">
           Feature
         </span>
         <h2 className="text-3xl sm:text-5xl lg:text-6xl mt-10 lg:mt-20 tracking-wide text-foreground font-bold">
