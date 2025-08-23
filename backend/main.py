@@ -1,14 +1,10 @@
-# backend/main.py
 from __future__ import annotations
-
 import os
 import json
 from typing import Dict, Any, List
-
 from fastapi import FastAPI, Depends, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
 import firebase_admin
 from firebase_admin import credentials, auth
 
@@ -46,10 +42,10 @@ def init_firebase() -> None:
         cred_obj = credentials.Certificate(cred_file)
 
     if cred_obj is None:
-        
         raise RuntimeError(
             "Firebase credentials not found. "
-            "Set FIREBASE_CREDENTIALS_JSON or place firebase-service-account.json (or set FIREBASE_CREDENTIALS_FILE)."
+            "Set FIREBASE_CREDENTIALS_JSON or place firebase-service-account.json "
+            "(or set FIREBASE_CREDENTIALS_FILE)."
         )
 
     firebase_admin.initialize_app(cred_obj)
@@ -69,7 +65,6 @@ def verify_token(
     token = credentials.credentials
     try:
         decoded = auth.verify_id_token(token)
-
         return decoded  
     except Exception:
         raise HTTPException(
@@ -77,11 +72,12 @@ def verify_token(
             detail="Invalid or expired token",
         )
 
-from .routes import prediction as prediction_routes 
+from routes.prediction import router as prediction_router
 
 app.include_router(
-    prediction_routes.router,
-    prefix="/api",
+    prediction_router,
+    prefix="/api/predictions",
+    tags=["Predictions"],
     dependencies=[Depends(verify_token)],
 )
 
