@@ -73,6 +73,7 @@ def verify_token(
         )
 
 from routes.prediction import router as prediction_router
+from routes.route_eta import router as route_eta_router
 
 app.include_router(
     prediction_router,
@@ -80,8 +81,6 @@ app.include_router(
     tags=["Predictions"],
     dependencies=[Depends(verify_token)],
 )
-
-from routes.route_eta import router as route_eta_router
 
 app.include_router(
     route_eta_router,
