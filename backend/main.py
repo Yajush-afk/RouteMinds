@@ -81,6 +81,15 @@ app.include_router(
     dependencies=[Depends(verify_token)],
 )
 
+from routes.route_eta import router as route_eta_router
+
+app.include_router(
+    route_eta_router,
+    prefix="/api/predictions",
+    tags=["Predictions"],
+    dependencies=[Depends(verify_token)],
+)
+
 @app.get("/ping")
 def health_check():
     return {"status": "Backend is working"}
