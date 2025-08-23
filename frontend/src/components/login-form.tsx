@@ -4,14 +4,42 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { auth } from "@/lib/firebase";
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { useState } from "react";
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
+
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+
+    const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, email, password);
+      console.log("Logged in:", userCred.user);
+      alert("Login successful!");
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      console.log("Google user:", result.user);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <form>
+      <form onSubmit={handleEmailLogin}>
         <div className="flex flex-col gap-6">
           <div className="flex flex-col items-center gap-2">
             <a
@@ -21,7 +49,7 @@ export function LoginForm({
               <div className="flex size-8 items-center justify-center rounded-md">
                 <GalleryVerticalEnd className="size-6" />
               </div>
-              <span className="sr-only">Acme Inc.</span>
+              <span className="sr-only">Optibus</span>
             </a>
             <h1 className="text-xl font-bold">Welcome to OptiBus.</h1>
             <div className="text-center text-sm">
@@ -38,6 +66,16 @@ export function LoginForm({
                 id="email"
                 type="email"
                 placeholder="m@example.com"
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <Label htmlFor="email">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                placeholder="Password"
+                onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>
