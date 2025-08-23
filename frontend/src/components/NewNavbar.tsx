@@ -1,18 +1,34 @@
 import { Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { NAV_LINKS } from "@/constants/nav";
 import logo from "@/assets/logo.svg";
 import { ModeToggle } from "./shared/mode-toggle";
 
+import { useAuth } from "@/hooks/useAuth";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
 const NewNavbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const { user } = useAuth(); // ✅ get current user
+  const navigate = useNavigate();
 
   const toggleMenu = () => setIsOpen((prev) => !prev);
   const closeSidebar = () => setIsOpen(false);
 
-  // Handle escape key + body scroll lock
+  // logout handler
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigate("/login");
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
+
+  // escape key + body scroll lock
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) closeSidebar();
@@ -32,7 +48,6 @@ const NewNavbar = () => {
       <nav className="sticky top-0 z-50 py-3 backdrop-blur-lg border-b border-border bg-background/80">
         <div className="container px-4 mx-auto relative text-sm">
           <div className="flex justify-between items-center">
-            
             {/* Logo */}
             <div className="hidden lg:flex items-center flex-shrink-0">
               <img src={logo} alt="Logo" className="h-10 w-10 mr-2" />
@@ -58,16 +73,26 @@ const NewNavbar = () => {
             {/* Desktop actions */}
             <div className="hidden lg:flex justify-center space-x-4 items-center">
               <ModeToggle />
-              <Link to="/login">
-                <Button variant="outline" className="border-border">
-                  Login
+              {user ? (
+                <Button
+                  variant="outline"
+                  className="border-border"
+                  onClick={handleLogout}
+                >
+                  Logout
                 </Button>
-              </Link>
-              <Link to="/sign-up">
-                <Button variant="default">
-                  Sign Up
-                </Button>
-              </Link>
+              ) : (
+                <>
+                  <Link to="/login">
+                    <Button variant="outline" className="border-border">
+                      Login
+                    </Button>
+                  </Link>
+                  <Link to="/sign-up">
+                    <Button variant="default">Sign Up</Button>
+                  </Link>
+                </>
+              )}
             </div>
 
             {/* Mobile toggle */}
@@ -103,7 +128,9 @@ const NewNavbar = () => {
           <div className="flex items-center space-x-3">
             <img src={logo} alt="Logo" className="h-10 w-10" />
             <div>
-              <h2 className="text-lg font-semibold text-card-foreground">Prime</h2>
+              <h2 className="text-lg font-semibold text-card-foreground">
+                Prime
+              </h2>
               <p className="text-sm text-muted-foreground">Navigation</p>
             </div>
           </div>
@@ -140,16 +167,31 @@ const NewNavbar = () => {
               <ModeToggle />
             </div>
             <div className="flex flex-col space-y-2">
-              <Link to="/login" onClick={closeSidebar}>
-                <Button variant="outline" className="w-full border-border">
-                  Login
+              {user ? (
+                <Button
+                  variant="outline"
+                  className="w-full border-border"
+                  onClick={() => {
+                    handleLogout();
+                    closeSidebar();
+                  }}
+                >
+                  Logout
                 </Button>
-              </Link>
-              <Link to="/sign-up" onClick={closeSidebar}>
-                <Button variant="default" className="w-full">
-                  Sign Up
-                </Button>
-              </Link>
+              ) : (
+                <>
+                  <Link to="/login" onClick={closeSidebar}>
+                    <Button variant="outline" className="w-full border-border">
+                      Login
+                    </Button>
+                  </Link>
+                  <Link to="/sign-up" onClick={closeSidebar}>
+                    <Button variant="default" className="w-full">
+                      Sign Up
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
