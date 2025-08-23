@@ -1,6 +1,5 @@
-// useAuth.ts
 import { useEffect, useState } from "react";
-import { onAuthStateChanged, getIdToken, type User } from "firebase/auth";
+import { onIdTokenChanged, getIdToken, type User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 export function useAuth() {
@@ -9,7 +8,7 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onIdTokenChanged(auth, async (u) => {
       setUser(u);
       if (u) {
         const t = await getIdToken(u, true); // get fresh JWT
