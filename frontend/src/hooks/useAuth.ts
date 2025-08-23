@@ -9,7 +9,7 @@ export function useAuth() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setLoading(false); // ✅ no longer loading once Firebase gives us user (or null)
+      setLoading(false);
     });
     return () => unsub();
   }, []);
