@@ -19,7 +19,7 @@ app = FastAPI(
 )
 
 FRONTEND_ORIGINS: List[str] = [
-    os.getenv("FRONTEND_URL", "http://localhost:3000"),
+    os.getenv("FRONTEND_URL", "http://localhost:5173"),
 ]
 app.add_middleware(
     CORSMiddleware,

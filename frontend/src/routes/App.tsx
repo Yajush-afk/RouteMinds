@@ -1,10 +1,11 @@
 import { ThemeProvider } from "@/components/theme-provider";
 import Home from "@/pages/Home";
-import Signup from "@/pages/Signup"
+import Signup from "@/pages/Signup";
 import Login from "@/pages/Login";
 import NotFoundPage from "@/pages/NotFoundPage";
 import { Route, Routes, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import BackendCheck from "@/components/BackendCheck";
 
 function App() {
   const { user, loading } = useAuth();
@@ -30,6 +31,7 @@ function App() {
           path="/sign-up"
           element={!user ? <Signup /> : <Navigate to="/" />}
         />
+        <Route path="/check-backend" element={<BackendCheck />} />
 
         {/* Example of a protected route */}
         {/* <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" />} /> */}

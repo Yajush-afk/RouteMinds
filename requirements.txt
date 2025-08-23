@@ -47,7 +47,7 @@ idna==3.10
 importlib_metadata==8.5.0
 ipykernel==6.29.5
 ipython==8.28.0
-ipython_pygments_lexers==0.1.1
+ipython_pygments_lexers==1.1.1
 itsdangerous==2.2.0
 jedi==0.19.2
 Jinja2==3.1.6
