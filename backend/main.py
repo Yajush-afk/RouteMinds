@@ -14,6 +14,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# CORS settings
 FRONTEND_ORIGINS: List[str] = [
     os.getenv("FRONTEND_URL", "http://localhost:5173"),
 ]
@@ -25,6 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Firebase initialization
 def init_firebase() -> None:
     if firebase_admin._apps:
         return
@@ -72,9 +74,11 @@ def verify_token(
             detail="Invalid or expired token",
         )
 
-from routes.prediction import router as prediction_router
-from routes.route_eta import router as route_eta_router
+# ===== Relative imports =====
+from .routes.prediction import router as prediction_router
+from .routes.route_eta import router as route_eta_router
 
+# ===== Routers with distinct prefixes =====
 app.include_router(
     prediction_router,
     prefix="/api/predictions",
@@ -84,11 +88,12 @@ app.include_router(
 
 app.include_router(
     route_eta_router,
-    prefix="/api/predictions",
-    tags=["Predictions"],
+    prefix="/api/eta",
+    tags=["ETA"],
     dependencies=[Depends(verify_token)],
 )
 
+# ===== Health checks =====
 @app.get("/ping")
 def health_check():
     return {"status": "Backend is working"}

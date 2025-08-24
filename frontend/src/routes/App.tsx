@@ -7,8 +7,12 @@ import { Route, Routes, Navigate } from "react-router-dom";
 import BackendCheck from "@/components/BackendCheck";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AIMap from "@/components/AIMap";
-import { Dashboard } from "@/pages/Dashboard";
+// import { Dashboard } from "@/pages/Dashboard";
 import { useAuth } from "@/hooks/useAuth";
+import RoutePredictionMap from "@/components/RoutePredictionMap";
+// import BusStopMap from "@/components/BusStopMap";
+// import FullRouteMap from "@/components/FullRouteMap";
+// import RouteDataViewer from "@/components/RouteDataViewer";
 
 function App() {
   const { user, loading } = useAuth();
@@ -25,8 +29,14 @@ function App() {
     <ThemeProvider defaultTheme="system" storageKey="theme">
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
-        <Route path="/sign-up" element={!user ? <Signup /> : <Navigate to="/dashboard" />} />
+        <Route
+          path="/login"
+          element={!user ? <Login /> : <Navigate to="/dashboard" />}
+        />
+        <Route
+          path="/sign-up"
+          element={!user ? <Signup /> : <Navigate to="/dashboard" />}
+        />
         <Route path="/check-backend" element={<BackendCheck />} />
 
         {/* Map page with default center */}
@@ -44,7 +54,7 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <RoutePredictionMap />
             </ProtectedRoute>
           }
         />

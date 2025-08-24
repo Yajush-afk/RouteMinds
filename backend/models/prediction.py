@@ -1,13 +1,13 @@
 import joblib
 from pathlib import Path
-from typing import Any
 import numpy as np
 
 
 class PredictionModel:
     def __init__(self, model_path: str, encoder_path: str):
-        self.model = joblib.load(Path(model_path))
-        self.encoder = joblib.load(Path(encoder_path))
+        base_path = Path(__file__).parent
+        self.model = joblib.load(base_path / model_path)
+        self.encoder = joblib.load(base_path / encoder_path)
 
     def encode_route(self, route_id: str) -> int:
         """Convert route_id string into encoded integer"""

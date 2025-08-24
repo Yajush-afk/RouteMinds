@@ -1,4 +1,5 @@
 # services/eta.py
+# services/eta.py
 from __future__ import annotations
 
 from typing import List, Tuple, Optional
@@ -8,9 +9,13 @@ from datetime import datetime, date, time, timedelta
 import numpy as np
 import pandas as pd
 
-from schemas.route_eta import RouteEtaRequest, RouteEtaResponse, StopPrediction
+# relative import instead of "from backend.schemas.route_eta ..."
+from ..schemas.route_eta import RouteEtaRequest, RouteEtaResponse, StopPrediction
 
 Coord = Tuple[float, float]
+
+# ... rest of the code stays the same ...
+
 
 
 class ETAService:
