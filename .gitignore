@@ -2,9 +2,7 @@ __pycache__/
 *.pyc
 .env
 *.sqlite3
-.env
 .DS_Store
-.env/
 venv/
 *.csv
 
@@ -16,17 +14,16 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+.vite
 node_modules
 dist
 dist-ssr
 *.local
 
-firebase-service-account.json
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
