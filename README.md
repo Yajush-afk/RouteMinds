@@ -13,6 +13,8 @@ RouteMinds is an intelligent transit routing and delay prediction system designe
 ## 🛠️ Tech Stack
 
 - **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance Python web framework
+- **Frontend Framework**: [React](https://react.dev/) + [Vite](https://vite.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- **UI Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **Machine Learning**: [TensorFlow/Keras](https://www.tensorflow.org/), [Scikit-learn](https://scikit-learn.org/), [XGBoost](https://xgboost.ai/)
 - **Data Processing**: [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/)
 - **Database**: [Firebase Firestore](https://firebase.google.com/docs/firestore) (NoSQL)
@@ -21,30 +23,31 @@ RouteMinds is an intelligent transit routing and delay prediction system designe
 ## 📂 Project Structure
 
 ```
-api/
-├── app/
-│   ├── api/
-│   │   ├── v1/
-│   │   │   ├── health.py         # Health check endpoints
-│   │   │   ├── predictions.py    # Delay prediction endpoints
-│   │   │   └── routes.py         # Route optimization endpoints
-│   │   ├── __init__.py
-│   ├── core/
-│   │   ├── config.py             # Configuration management
-│   │   ├── exceptions.py         # Custom exception handling
-│   │   └── __init__.py
-│   ├── ml/                       # Machine learning models and utilities
-│   │   ├── __init__.py
-│   ├── schemas/                  # Pydantic data models
-│   │   ├── __init__.py
-│   ├── services/                 # Business logic and external integrations
-│   │   ├── __init__.py
-│   ├── main.py                   # FastAPI application entry point
-│   └── __init__.py
-├── .env                          # Environment variables (not in git)
-├── requirements.txt              # Python dependencies
-├── environment.yml               # Conda environment configuration
-└── Dockerfile                    # Docker build configuration
+RouteMinds/
+├── api/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── v1/
+│   │   │       ├── health.py         # Health check endpoints
+│   │   │       ├── predictions.py    # Delay prediction endpoints
+│   │   │       └── routes.py         # Route optimization endpoints
+│   │   ├── core/
+│   │   │   ├── config.py             # Configuration management
+│   │   │   └── exceptions.py         # Custom exception handling
+│   │   ├── ml/                       # Machine learning models and utilities
+│   │   ├── schemas/                  # Pydantic data models
+│   │   ├── services/                 # Business logic and external integrations
+│   │   └── main.py                   # FastAPI application entry point
+│   ├── requirements.txt              # Python dependencies
+│   ├── environment.yml               # Conda environment configuration
+│   └── Dockerfile                    # Docker build configuration
+├── web/
+│   ├── src/                          # React app source code
+│   ├── public/                       # Static assets
+│   ├── package.json                  # Frontend scripts and dependencies
+│   ├── vite.config.ts                # Vite configuration
+│   └── tsconfig.json                 # TypeScript configuration
+└── data/                             # Datasets and model artifacts
 ```
 
 ## ⚙️ Setup
@@ -52,29 +55,27 @@ api/
 ### Prerequisites
 
 - Python 3.11+
-- Conda (recommended for environment management)
-- Docker (optional, for containerized deployment)
+- Node.js 20+
+- Conda (recommended for backend environment management)
+- Docker (optional, for containerized backend deployment)
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd RouteMinds/api
+   cd RouteMinds
    ```
 
-2. **Create Conda environment**
+2. **Set up backend (`api/`)**
    ```bash
+   cd api
    conda env create -f environment.yml
    conda activate route_minds
-   ```
-
-3. **Install Python dependencies**
-   ```bash
    pip install -r requirements.txt
    ```
 
-4. **Configure environment variables**
+3. **Configure backend environment variables**
    Create a `.env` file in the `api/` directory:
    ```bash
    cp .env.example .env
@@ -94,17 +95,41 @@ api/
    MODEL_PATH="path/to/your/model.pkl"
    ```
 
-## 🏃 Running the Server
+4. **Set up frontend (`web/`)**
 
-### Development Mode
+   In a new terminal:
+
+   ```bash
+   cd RouteMinds/web
+   pnpm install
+   ```
+
+   If you prefer npm:
+
+   ```bash
+   npm install
+   ```
+
+## 🏃 Running the App
+
+### Backend (Development Mode)
 
 ```bash
+cd api
 uvicorn app.main:app --reload --host [IP_ADDRESS] --port 8000
 ```
 
-### Production Mode
+### Frontend (Development Mode)
 
 ```bash
+cd web
+pnpm dev
+```
+
+### Backend (Production Mode)
+
+```bash
+cd api
 gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b [IP_ADDRESS]:8000
 ```
 
@@ -121,7 +146,13 @@ curl http://localhost:8000/api/v1/health
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
+### Frontend App
+
+- **Vite Dev Server**: http://localhost:5173
+
 ## 🏗️ Architecture
+
+### Backend Architecture
 
 ### Service Layers
 
