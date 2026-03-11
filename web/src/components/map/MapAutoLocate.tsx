@@ -33,7 +33,7 @@ function MapAutoLocate({
       try {
         const nextPosition = await getBrowserLocation()
         onLocateSuccess(nextPosition)
-        map.setView(nextPosition, 15, { animate: true })
+        map.setView(nextPosition, 20, { animate: true })
       } catch (error) {
         const message =
           error instanceof Error

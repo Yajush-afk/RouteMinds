@@ -6,11 +6,14 @@ import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 
 import "leaflet/dist/leaflet.css"
+import { TooltipProvider } from "./components/ui/tooltip.tsx"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      <TooltipProvider>
+        <App />
+      </TooltipProvider>
     </ThemeProvider>
   </StrictMode>
 )
