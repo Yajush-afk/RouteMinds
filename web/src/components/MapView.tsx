@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react"
-import { MapContainer, TileLayer } from "react-leaflet"
+import { useCallback, useEffect, useState } from "react"
+import { MapContainer, TileLayer, useMap } from "react-leaflet"
 import type { LatLngBoundsExpression, LatLngTuple } from "leaflet"
 
 import MapAutoLocate from "@/components/map/MapAutoLocate"
@@ -7,6 +7,7 @@ import MapClickHandler from "@/components/map/MapClickHandler"
 import MapControls from "@/components/map/MapControls"
 import MapMarker from "@/components/map/MapMarker"
 import { isInDelhi } from "@/lib/geo"
+import { searchPlaces, type SearchPlaceResult } from "@/lib/nominatim"
 import {
   SidebarProvider,
   SidebarTrigger,
@@ -22,6 +23,21 @@ const INITIAL_MAP_CENTER: LatLngTuple = [22.9734, 78.6569]
 const FALLBACK_CENTER: LatLngTuple = [28.6139, 77.209]
 const DELHI_ALERT = "RouteMinds is only limited to Delhi for now."
 const YOUR_LOCATION_LABEL = "Your Location"
+const DESTINATION_SEARCH_DEBOUNCE_MS = 350
+
+function MapPanTo({ position }: { position: LatLngTuple | null }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!position) {
+      return
+    }
+
+    map.setView(position, Math.max(map.getZoom(), 14), { animate: true })
+  }, [map, position])
+
+  return null
+}
 
 function FloatingSidebarTrigger() {
   const { isMobile, state } = useSidebar()
@@ -45,9 +61,40 @@ function MapView() {
   const [locationError, setLocationError] = useState<string | null>(null)
   const [fromLocation, setFromLocation] = useState("")
   const [destination, setDestination] = useState("")
+  const [destinationSuggestions, setDestinationSuggestions] = useState<
+    SearchPlaceResult[]
+  >([])
+  const [isDestinationSearching, setIsDestinationSearching] = useState(false)
+  const [hasDestinationSearchAttempted, setHasDestinationSearchAttempted] =
+    useState(false)
+  const [panToPosition, setPanToPosition] = useState<LatLngTuple | null>(null)
 
   const handleFromLocationChange = useCallback((nextLocation: string) => {
     setFromLocation(nextLocation)
+  }, [])
+
+  const handleDestinationChange = useCallback((nextDestination: string) => {
+    setDestination(nextDestination)
+
+    if (!nextDestination.trim()) {
+      setDestinationSuggestions([])
+      setHasDestinationSearchAttempted(false)
+    }
+  }, [])
+
+  const handleDestinationSelect = useCallback((result: SearchPlaceResult) => {
+    const nextPosition: LatLngTuple = [result.lat, result.lon]
+
+    if (!isInDelhi(nextPosition)) {
+      alert(DELHI_ALERT)
+      return
+    }
+
+    setDestination(result.displayName)
+    setDestinationSuggestions([])
+    setHasDestinationSearchAttempted(false)
+    setMarkerPosition(nextPosition)
+    setPanToPosition(nextPosition)
   }, [])
 
   const placeMarkerIfAllowed = useCallback((nextPosition: LatLngTuple) => {
@@ -79,6 +126,50 @@ function MapView() {
     setIsLocating(false)
     setLocationError(message)
   }, [])
+
+  useEffect(() => {
+    const destinationQuery = destination.trim()
+
+    if (destinationQuery.length < 3) {
+      setDestinationSuggestions([])
+      setIsDestinationSearching(false)
+      setHasDestinationSearchAttempted(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(async () => {
+      setIsDestinationSearching(true)
+
+      try {
+        const results = await searchPlaces(destinationQuery, {
+          signal: controller.signal,
+          countryCode: "in",
+          limit: 5,
+        })
+
+        const delhiResults = results.filter((result) =>
+          isInDelhi([result.lat, result.lon])
+        )
+
+        setDestinationSuggestions(delhiResults)
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return
+        }
+
+        setDestinationSuggestions([])
+      } finally {
+        setIsDestinationSearching(false)
+        setHasDestinationSearchAttempted(true)
+      }
+    }, DESTINATION_SEARCH_DEBOUNCE_MS)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeoutId)
+    }
+  }, [destination])
 
   return (
     <SidebarProvider>
@@ -127,6 +218,7 @@ function MapView() {
             onLocateSuccess={handleLocateSuccess}
             onLocateError={handleLocateError}
           />
+          <MapPanTo position={panToPosition} />
         </MapContainer>
 
         <div className="pointer-events-none absolute inset-0 z-[850]">
@@ -134,8 +226,16 @@ function MapView() {
             <MapSidebar
               location={fromLocation}
               destination={destination}
+              destinationSuggestions={destinationSuggestions}
+              isDestinationSearching={isDestinationSearching}
+              showNoDestinationResults={
+                hasDestinationSearchAttempted &&
+                destination.trim().length >= 3 &&
+                destinationSuggestions.length === 0
+              }
               onLocationChange={handleFromLocationChange}
-              onDestinationChange={setDestination}
+              onDestinationChange={handleDestinationChange}
+              onDestinationSelect={handleDestinationSelect}
             />
           </div>
         </div>
