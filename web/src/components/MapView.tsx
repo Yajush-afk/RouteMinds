@@ -33,7 +33,7 @@ function FloatingSidebarTrigger() {
 
   return (
     <SidebarTrigger
-      className={`absolute top-4 z-[1000] bg-background/90 shadow-md backdrop-blur transition-[left,opacity,filter] duration-200 ease-out supports-[backdrop-filter]:bg-background/75 ${triggerPositionClass}`}
+      className={`absolute top-4 z-[1000] bg-card/90 shadow-md backdrop-blur transition-[left,opacity,filter] duration-200 ease-out supports-[backdrop-filter]:bg-card/75 ${triggerPositionClass}`}
     />
   )
 }
