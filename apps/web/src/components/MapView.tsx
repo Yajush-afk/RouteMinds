@@ -12,7 +12,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from "@/components/ui/sidebar"
+} from "@workspace/ui/components/sidebar"
 import MapSidebar from "./map/MapSidebar"
 
 const INDIA_BOUNDS: LatLngBoundsExpression = [

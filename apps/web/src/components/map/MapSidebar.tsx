@@ -4,10 +4,10 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarHeader,
-} from "@/components/ui/sidebar"
+} from "@workspace/ui/components/sidebar"
 import type { SearchPlaceResult } from "@/lib/nominatim"
-import { Input } from "../ui/input"
-import { Field } from "../ui/field"
+import { Input } from "@workspace/ui/components/input"
+import { Field } from "@workspace/ui/components/field"
 
 type MapSidebarProps = {
   location: string

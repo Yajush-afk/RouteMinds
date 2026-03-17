@@ -2,7 +2,7 @@ import type { LatLngTuple } from "leaflet"
 import { LocateFixed, Minus, Plus } from "lucide-react"
 import { useMap } from "react-leaflet"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@workspace/ui/components/button"
 import { getBrowserLocation } from "@/lib/geolocation"
 
 type MapControlsProps = {
@@ -38,7 +38,7 @@ function MapControls({
   }
 
   return (
-    <div className="pointer-events-auto absolute right-5 bottom-5 z-[1000] flex flex-col items-center gap-2 rounded-xl">
+    <div className="pointer-events-auto absolute right-5 bottom-5 z-1000 flex flex-col items-center gap-2 rounded-xl">
       <Button
         type="button"
         size="icon"
