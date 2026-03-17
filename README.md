@@ -24,6 +24,19 @@ RouteMinds is an intelligent transit routing and delay prediction system designe
 
 ```
 RouteMinds/
+├── apps/
+│   └── web/                          # React + Vite frontend app
+│       ├── src/
+│       ├── public/
+│       ├── package.json
+│       ├── vite.config.ts
+│       └── tsconfig.json
+├── packages/
+│   └── ui/                           # Shared UI components/utilities
+│       ├── src/components/
+│       ├── src/hooks/
+│       ├── src/lib/
+│       └── package.json
 ├── api/
 │   ├── app/
 │   │   ├── api/
@@ -39,14 +52,10 @@ RouteMinds/
 │   │   ├── services/                 # Business logic and external integrations
 │   │   └── main.py                   # FastAPI application entry point
 │   ├── requirements.txt              # Python dependencies
-│   ├── environment.yml               # Conda environment configuration
-│   └── Dockerfile                    # Docker build configuration
-├── web/
-│   ├── src/                          # React app source code
-│   ├── public/                       # Static assets
-│   ├── package.json                  # Frontend scripts and dependencies
-│   ├── vite.config.ts                # Vite configuration
-│   └── tsconfig.json                 # TypeScript configuration
+│   └── environment.yml               # Conda environment configuration
+├── bun.lock                          # Bun lockfile
+├── package.json                      # Workspace + Turbo scripts
+├── turbo.json                        # Turbo task pipeline
 └── data/                             # Datasets and model artifacts
 ```
 
@@ -54,20 +63,23 @@ RouteMinds/
 
 ### Prerequisites
 
+- Bun 1.2+ (workspace package manager/runtime)
 - Python 3.11+
-- Node.js 20+
+- Node.js 20+ (optional, recommended for compatibility)
 - Conda (recommended for backend environment management)
 - Docker (optional, for containerized backend deployment)
 
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone <repository-url>
    cd RouteMinds
    ```
 
 2. **Set up backend (`api/`)**
+
    ```bash
    cd api
    conda env create -f environment.yml
@@ -77,10 +89,13 @@ RouteMinds/
 
 3. **Configure backend environment variables**
    Create a `.env` file in the `api/` directory:
+
    ```bash
    cp .env.example .env
    ```
+
    Edit `.env` with your configuration:
+
    ```env
    # Application settings
    APP_NAME="RouteMinds API"
@@ -95,19 +110,10 @@ RouteMinds/
    MODEL_PATH="path/to/your/model.pkl"
    ```
 
-4. **Set up frontend (`web/`)**
-
-   In a new terminal:
+4. **Install monorepo dependencies (root workspace)**
 
    ```bash
-   cd RouteMinds/web
-   pnpm install
-   ```
-
-   If you prefer npm:
-
-   ```bash
-   npm install
+   bun install
    ```
 
 ## 🏃 Running the App
@@ -122,8 +128,17 @@ uvicorn app.main:app --reload --host [IP_ADDRESS] --port 8000
 ### Frontend (Development Mode)
 
 ```bash
-cd web
-pnpm dev
+bun run dev
+```
+
+This runs the Turbo `dev` pipeline and starts the web app (`apps/web`) locally.
+
+### Frontend (Other common tasks)
+
+```bash
+bun run typecheck
+bun run lint
+bun run build
 ```
 
 ### Backend (Production Mode)
@@ -148,7 +163,7 @@ curl http://localhost:8000/api/v1/health
 
 ### Frontend App
 
-- **Vite Dev Server**: http://localhost:5173
+- **Vite Dev Server**: shown in terminal (usually http://localhost:5173)
 
 ## 🏗️ Architecture
 
@@ -191,12 +206,14 @@ curl http://localhost:8000/api/v1/health
 ## 🎯 ML Models
 
 ### Delay Prediction Model
+
 - **Framework**: TensorFlow/Keras
 - **Input Features**: Time-based (hour, day, month), route-based, weather conditions
 - **Output**: Predicted delay in minutes
 - **Location**: `api/app/ml/models/delay_prediction_model.h5`
 
 ### Route Optimization Model
+
 - **Framework**: XGBoost, Scikit-learn
 - **Input Features**: Route characteristics, demand patterns, traffic data
 - **Output**: Optimal route recommendations
@@ -207,6 +224,7 @@ curl http://localhost:8000/api/v1/health
 ### Docker Deployment
 
 1. **Build the Docker image**
+
    ```bash
    docker build -t routeminds-api .
    ```
