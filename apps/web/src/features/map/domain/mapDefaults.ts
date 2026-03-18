@@ -17,7 +17,7 @@ export const FALLBACK_DELHI_CENTER: LngLat = {
 
 export const DEFAULT_MAP_ZOOM = 13
 export const MIN_MAP_ZOOM = 5
-export const LOCATE_ZOOM = 20
+export const LOCATE_ZOOM = 17
 export const DESTINATION_ZOOM = 14
 
 export const DELHI_ONLY_ALERT_MESSAGE =
