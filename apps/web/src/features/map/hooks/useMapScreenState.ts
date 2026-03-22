@@ -53,6 +53,7 @@ export function useMapScreenState() {
     isSearching,
     hasAttempted,
     clearResults,
+    selectSuggestion,
   } = useDestinationSearch()
 
   const applyUserPosition = useEffectEvent((nextPosition: LngLat) => {
@@ -117,8 +118,7 @@ export function useMapScreenState() {
       return
     }
 
-    setSearchQuery(result.label)
-    clearResults()
+    selectSuggestion(result.label)
     setSelectedPoint(result.position)
     setLocationMessage(null)
     setCameraIntent({
