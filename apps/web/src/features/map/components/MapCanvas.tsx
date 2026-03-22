@@ -72,7 +72,7 @@ const MapCanvas = forwardRef<MapRef, MapCanvasProps>(function MapCanvas(
         onClick={handleMapClick}
       >
         {children}
-        <div className="pointer-events-none absolute right-3 bottom-3 z-[10] rounded-md bg-background/85 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        <div className="pointer-events-none absolute right-3 bottom-3 z-10 rounded-md bg-background/85 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur supports-backdrop-filter:bg-background/70">
           <span dangerouslySetInnerHTML={{ __html: OPENFREEMAP_ATTRIBUTION }} />
         </div>
       </Map>
