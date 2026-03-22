@@ -1,16 +1,18 @@
-import type { LatLngTuple } from "leaflet"
+import type { LngLat, PlaceSuggestion } from "@/features/map/domain/types"
 
 const NOMINATIM_REVERSE_ENDPOINT = "https://nominatim.openstreetmap.org/reverse"
 const NOMINATIM_SEARCH_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 
+type SearchPlacesOptions = {
+  signal?: AbortSignal
+  language?: string
+  countryCode?: string
+  limit?: number
+}
+
 type ReverseGeocodeOptions = {
   signal?: AbortSignal
   language?: string
-}
-
-type NominatimReverseResponse = {
-  display_name?: string
-  error?: string
 }
 
 type NominatimSearchResponseItem = {
@@ -20,25 +22,21 @@ type NominatimSearchResponseItem = {
   lon: string
 }
 
-type SearchPlacesOptions = {
-  signal?: AbortSignal
-  language?: string
-  countryCode?: string
-  limit?: number
+type NominatimReverseResponse = {
+  display_name?: string
+  error?: string
 }
 
-export type SearchPlaceResult = {
-  placeId: number
-  displayName: string
-  lat: number
-  lon: number
+function getContactEmail() {
+  return import.meta.env.VITE_NOMINATIM_EMAIL?.trim()
 }
 
 export async function searchPlaces(
   query: string,
   options: SearchPlacesOptions = {}
-): Promise<SearchPlaceResult[]> {
+): Promise<PlaceSuggestion[]> {
   const normalizedQuery = query.trim()
+
   if (!normalizedQuery) {
     return []
   }
@@ -48,13 +46,10 @@ export async function searchPlaces(
     format: "jsonv2",
     addressdetails: "1",
     limit: String(options.limit ?? 5),
+    countrycodes: options.countryCode ?? "in",
   })
 
-  if (options.countryCode) {
-    params.set("countrycodes", options.countryCode)
-  }
-
-  const contactEmail = import.meta.env.VITE_NOMINATIM_EMAIL?.trim()
+  const contactEmail = getContactEmail()
   if (contactEmail) {
     params.set("email", contactEmail)
   }
@@ -77,26 +72,28 @@ export async function searchPlaces(
   const payload = (await response.json()) as NominatimSearchResponseItem[]
 
   return payload.map((item) => ({
-    placeId: item.place_id,
-    displayName: item.display_name,
-    lat: Number(item.lat),
-    lon: Number(item.lon),
+    id: String(item.place_id),
+    label: item.display_name,
+    position: {
+      lat: Number(item.lat),
+      lng: Number(item.lon),
+    },
   }))
 }
 
 export async function reverseGeocode(
-  [latitude, longitude]: LatLngTuple,
+  position: LngLat,
   options: ReverseGeocodeOptions = {}
 ): Promise<string | null> {
   const params = new URLSearchParams({
     format: "jsonv2",
-    lat: String(latitude),
-    lon: String(longitude),
+    lat: String(position.lat),
+    lon: String(position.lng),
     addressdetails: "1",
     zoom: "18",
   })
 
-  const contactEmail = import.meta.env.VITE_NOMINATIM_EMAIL?.trim()
+  const contactEmail = getContactEmail()
   if (contactEmail) {
     params.set("email", contactEmail)
   }

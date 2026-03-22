@@ -1,6 +1,6 @@
-import type { LatLngTuple } from "leaflet"
-
 import { DELHI_POLYGON_LNGLAT } from "@/data/delhi-polygon"
+import { DELHI_ONLY_ALERT_MESSAGE } from "./mapDefaults"
+import type { LngLat } from "./types"
 
 function isPointOnSegment(
   point: [number, number],
@@ -46,7 +46,14 @@ function isPointInRing(
   return inside
 }
 
-export function isInDelhi(position: LatLngTuple) {
-  const lngLat: [number, number] = [position[1], position[0]]
-  return isPointInRing(lngLat, DELHI_POLYGON_LNGLAT)
+export function isSelectableLocation(position: LngLat) {
+  return isPointInRing([position.lng, position.lat], DELHI_POLYGON_LNGLAT)
+}
+
+export function getLocationRejectionReason(position: LngLat) {
+  if (isSelectableLocation(position)) {
+    return null
+  }
+
+  return DELHI_ONLY_ALERT_MESSAGE
 }
