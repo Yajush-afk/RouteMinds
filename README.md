@@ -1,4 +1,4 @@
-# RouteMinds
+# RouteMinds by Yajush
 
 RouteMinds is an intelligent transit routing and delay prediction system designed to optimize bus routes and provide accurate travel time estimates for Delhi's bus network. It combines historical data, real-time traffic information, and machine learning to deliver efficient transit solutions.
 
