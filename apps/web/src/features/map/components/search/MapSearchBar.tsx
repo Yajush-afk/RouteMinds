@@ -289,17 +289,21 @@ function MapSearchBar({
   return (
     <motion.div
       ref={containerRef}
-      initial={
-        prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }
-      }
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{
-        duration: prefersReducedMotion ? 0.12 : 0.24,
-        ease: [0, 0.71, 0.2, 1.01],
-      }}
+      initial={prefersReducedMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.28 }}
       className="pointer-events-auto absolute top-4 left-1/2 z-850 w-[min(calc(100%-2rem),32rem)] -translate-x-1/2"
     >
-      <div className="relative">
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: -28 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: prefersReducedMotion ? 0 : 0.45,
+          delay: prefersReducedMotion ? 0 : 0.08,
+          ease: [0.16, 1, 0.3, 1],
+        }}
+        className="relative"
+      >
         <InputGroup className={cn("w-full", getFieldClassName())}>
           <InputGroupInput
             placeholder="From"
@@ -342,9 +346,18 @@ function MapSearchBar({
               )
             : null}
         </AnimatePresence>
-      </div>
+      </motion.div>
 
-      <div className="relative mt-2">
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: -28 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{
+          duration: prefersReducedMotion ? 0 : 0.45,
+          delay: prefersReducedMotion ? 0 : 0.24,
+          ease: [0.16, 1, 0.3, 1],
+        }}
+        className="relative mt-2"
+      >
         <InputGroup className={cn("w-full", getFieldClassName())}>
           <InputGroupInput
             placeholder="To"
@@ -386,7 +399,7 @@ function MapSearchBar({
             )
           ) : null}
         </AnimatePresence>
-      </div>
+      </motion.div>
     </motion.div>
   )
 }
