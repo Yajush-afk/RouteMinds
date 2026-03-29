@@ -3,6 +3,8 @@ export type LngLat = {
   lat: number
 }
 
+export type LocationField = "from" | "to"
+
 export type MapViewport = {
   center: LngLat
   zoom: number

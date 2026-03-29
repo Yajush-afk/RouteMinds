@@ -12,7 +12,9 @@ function MapScreen() {
   const mapRef = useRef<MapRef | null>(null)
 
   const {
-    selectedPoint,
+    mapCenter,
+    originPoint,
+    destinationPoint,
     originLabel,
     originResults,
     isOriginSearching,
@@ -29,9 +31,11 @@ function MapScreen() {
     handleOriginBlur,
     handleOriginSelect,
     handleDestinationChange,
+    handleDestinationFocus,
     handleDestinationSelect,
     handleMapSelect,
-    handleMarkerDragEnd,
+    handleOriginMarkerDragEnd,
+    handleDestinationMarkerDragEnd,
     handleCameraIntentHandled,
     handleLocateRequest,
   } = useMapScreenState()
@@ -47,7 +51,7 @@ function MapScreen() {
   return (
     <section className="relative h-screen w-full">
       <MapCanvas
-        center={selectedPoint}
+        center={mapCenter}
         ref={mapRef}
         onMapClick={handleMapSelect}
         className="absolute inset-0 h-full w-full"
@@ -57,10 +61,20 @@ function MapScreen() {
           intent={cameraIntent}
           onHandled={handleCameraIntentHandled}
         />
-        {selectedPoint && (
+        {originPoint && (
           <SelectedLocationMarker
-            position={selectedPoint}
-            onDragEnd={handleMarkerDragEnd}
+            position={originPoint}
+            badge="A"
+            tone="origin"
+            onDragEnd={handleOriginMarkerDragEnd}
+          />
+        )}
+        {destinationPoint && (
+          <SelectedLocationMarker
+            position={destinationPoint}
+            badge="B"
+            tone="destination"
+            onDragEnd={handleDestinationMarkerDragEnd}
           />
         )}
       </MapCanvas>
@@ -80,6 +94,7 @@ function MapScreen() {
           onOriginBlur={handleOriginBlur}
           onOriginSelect={handleOriginSelect}
           onDestinationChange={handleDestinationChange}
+          onDestinationFocus={handleDestinationFocus}
           onDestinationSelect={handleDestinationSelect}
         />
       </div>

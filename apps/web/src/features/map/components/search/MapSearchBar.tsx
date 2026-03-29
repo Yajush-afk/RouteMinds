@@ -31,6 +31,7 @@ type MapSearchBarProps = {
   onOriginBlur: () => void
   onOriginSelect: (result: PlaceSuggestion) => void
   onDestinationChange: (next: string) => void
+  onDestinationFocus: () => void
   onDestinationSelect: (result: PlaceSuggestion) => void
 }
 
@@ -48,6 +49,7 @@ function MapSearchBar({
   onOriginBlur,
   onOriginSelect,
   onDestinationChange,
+  onDestinationFocus,
   onDestinationSelect,
 }: MapSearchBarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -391,6 +393,7 @@ function MapSearchBar({
             onFocus={(event) => {
               setActiveField("to")
               setHighlightedIndex(destinationResults.length > 0 ? 0 : -1)
+              onDestinationFocus()
 
               if (event.currentTarget.value.trim()) {
                 event.currentTarget.select()
