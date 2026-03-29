@@ -10,7 +10,7 @@ import {
 } from "@/features/map/config/mapStyle"
 import {
   DEFAULT_MAP_ZOOM,
-  INDIA_BOUNDS,
+  DELHI_BOUNDS,
   INITIAL_MAP_CENTER,
   MIN_MAP_ZOOM,
 } from "@/features/map/domain/mapDefaults"
@@ -40,8 +40,8 @@ const MapCanvas = forwardRef<MapRef, MapCanvasProps>(function MapCanvas(
   const maxBounds = useMemo(
     () =>
       [
-        [INDIA_BOUNDS.southWest.lng, INDIA_BOUNDS.southWest.lat],
-        [INDIA_BOUNDS.northEast.lng, INDIA_BOUNDS.northEast.lat],
+        [DELHI_BOUNDS.southWest.lng, DELHI_BOUNDS.southWest.lat],
+        [DELHI_BOUNDS.northEast.lng, DELHI_BOUNDS.northEast.lat],
       ] as [[number, number], [number, number]],
     []
   )
