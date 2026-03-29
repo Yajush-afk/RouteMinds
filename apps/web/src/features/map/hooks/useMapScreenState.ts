@@ -47,13 +47,23 @@ export function useMapScreenState() {
   } = useUserLocation({ autoLocate: true })
 
   const {
-    searchQuery,
-    setSearchQuery,
-    results,
-    isSearching,
-    hasAttempted,
-    clearResults,
-    selectSuggestion,
+    searchQuery: originSearchQuery,
+    setSearchQuery: setOriginSearchQuery,
+    results: originResults,
+    isSearching: isOriginSearching,
+    hasAttempted: hasOriginAttempted,
+    clearResults: clearOriginResults,
+    selectSuggestion: selectOriginSuggestion,
+  } = useDestinationSearch()
+
+  const {
+    searchQuery: destinationSearchQuery,
+    setSearchQuery: setDestinationSearchQuery,
+    results: destinationResults,
+    isSearching: isDestinationSearching,
+    hasAttempted: hasDestinationAttempted,
+    clearResults: clearDestinationResults,
+    selectSuggestion: selectDestinationSuggestion,
   } = useDestinationSearch()
 
   const applyUserPosition = useEffectEvent((nextPosition: LngLat) => {
@@ -100,13 +110,55 @@ export function useMapScreenState() {
 
   function handleLocationChange(nextLocation: string) {
     setOriginLabel(nextLocation)
+    setOriginSearchQuery(nextLocation)
+
+    if (!nextLocation.trim()) {
+      clearOriginResults()
+    }
+  }
+
+  function handleOriginFocus() {
+    if (originLabel === YOUR_LOCATION_LABEL) {
+      setOriginLabel("")
+      setOriginSearchQuery("")
+      clearOriginResults()
+    }
+  }
+
+  function handleOriginBlur() {
+    if (originLabel.trim()) {
+      return
+    }
+
+    setOriginLabel(YOUR_LOCATION_LABEL)
+    setOriginSearchQuery("")
+    clearOriginResults()
+  }
+
+  function handleOriginSelect(result: PlaceSuggestion) {
+    const rejectionReason = getLocationRejectionReason(result.position)
+
+    if (rejectionReason) {
+      setLocationMessage(rejectionReason)
+      return
+    }
+
+    selectOriginSuggestion(result.label)
+    setOriginLabel(result.label)
+    setSelectedPoint(result.position)
+    setLocationMessage(null)
+    setCameraIntent({
+      type: "flyTo",
+      center: result.position,
+      zoom: DESTINATION_ZOOM,
+    })
   }
 
   function handleDestinationChange(nextDestination: string) {
-    setSearchQuery(nextDestination)
+    setDestinationSearchQuery(nextDestination)
 
     if (!nextDestination.trim()) {
-      clearResults()
+      clearDestinationResults()
     }
   }
 
@@ -118,7 +170,7 @@ export function useMapScreenState() {
       return
     }
 
-    selectSuggestion(result.label)
+    selectDestinationSuggestion(result.label)
     setSelectedPoint(result.position)
     setLocationMessage(null)
     setCameraIntent({
@@ -163,15 +215,26 @@ export function useMapScreenState() {
   return {
     selectedPoint,
     originLabel,
-    destinationText: searchQuery,
-    destinationResults: results,
-    isDestinationSearching: isSearching,
+    originResults,
+    isOriginSearching,
+    showNoOriginResults:
+      hasOriginAttempted &&
+      originSearchQuery.trim().length >= 3 &&
+      originResults.length === 0,
+    destinationText: destinationSearchQuery,
+    destinationResults,
+    isDestinationSearching,
     showNoDestinationResults:
-      hasAttempted && searchQuery.trim().length >= 3 && results.length === 0,
+      hasDestinationAttempted &&
+      destinationSearchQuery.trim().length >= 3 &&
+      destinationResults.length === 0,
     isLocating: status === "loading",
     locationMessage,
     cameraIntent,
     handleLocationChange,
+    handleOriginFocus,
+    handleOriginBlur,
+    handleOriginSelect,
     handleDestinationChange,
     handleDestinationSelect,
     handleMapSelect,

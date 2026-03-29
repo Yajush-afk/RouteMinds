@@ -14,6 +14,9 @@ function MapScreen() {
   const {
     selectedPoint,
     originLabel,
+    originResults,
+    isOriginSearching,
+    showNoOriginResults,
     destinationText,
     destinationResults,
     isDestinationSearching,
@@ -22,6 +25,9 @@ function MapScreen() {
     locationMessage,
     cameraIntent,
     handleLocationChange,
+    handleOriginFocus,
+    handleOriginBlur,
+    handleOriginSelect,
     handleDestinationChange,
     handleDestinationSelect,
     handleMapSelect,
@@ -62,11 +68,17 @@ function MapScreen() {
       <div className="pointer-events-none absolute inset-0 z-850">
         <MapSearchBar
           originText={originLabel}
+          originResults={originResults}
+          isOriginSearching={isOriginSearching}
+          showNoOriginResults={showNoOriginResults}
           destinationText={destinationText}
           destinationResults={destinationResults}
           isDestinationSearching={isDestinationSearching}
           showNoDestinationResults={showNoDestinationResults}
           onOriginChange={handleLocationChange}
+          onOriginFocus={handleOriginFocus}
+          onOriginBlur={handleOriginBlur}
+          onOriginSelect={handleOriginSelect}
           onDestinationChange={handleDestinationChange}
           onDestinationSelect={handleDestinationSelect}
         />
