@@ -211,25 +211,42 @@ function MapSearchBar({
         <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent" />
 
         {isSearching ? (
-          <div className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/58 px-3 py-2.5 text-sm text-slate-600">
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: prefersReducedMotion ? 0 : 0.22,
+              ease: "easeOut",
+            }}
+            className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/58 px-3 py-2.5 text-sm text-slate-600"
+          >
             <LoaderCircle className="size-4 animate-spin text-slate-500" />
             <p>Searching locations...</p>
-          </div>
+          </motion.div>
         ) : null}
 
         {!isSearching ? (
-          <ul className="max-h-52 overflow-y-auto rounded-[0.95rem] border border-slate-200/70 bg-white">
+          <motion.ul
+            initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: prefersReducedMotion ? 0 : 0.24,
+              ease: "easeOut",
+            }}
+            className="max-h-52 overflow-y-auto rounded-[0.95rem] border border-slate-200/70 bg-white"
+          >
             {results.map((result, index) => (
               <motion.li
                 key={result.id}
                 className={cn(
                   index > 0 ? "border-t border-slate-200/80" : undefined
                 )}
-                initial={prefersReducedMotion ? false : { opacity: 0, y: -3 }}
+                initial={prefersReducedMotion ? false : { opacity: 0, y: -12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
-                  duration: prefersReducedMotion ? 0 : 0.12,
-                  delay: prefersReducedMotion ? 0 : index * 0.015,
+                  duration: prefersReducedMotion ? 0 : 0.22,
+                  delay: prefersReducedMotion ? 0 : 0.06 + index * 0.045,
+                  ease: "easeOut",
                 }}
               >
                 <button
@@ -263,14 +280,22 @@ function MapSearchBar({
                 </button>
               </motion.li>
             ))}
-          </ul>
+          </motion.ul>
         ) : null}
 
         {!isSearching && showNoResults && results.length === 0 && (
-          <div className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/56 px-3 py-2.5 text-sm text-slate-600">
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: prefersReducedMotion ? 0 : 0.22,
+              ease: "easeOut",
+            }}
+            className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/56 px-3 py-2.5 text-sm text-slate-600"
+          >
             <CircleAlert className="size-4 text-slate-500" />
             <p>{emptyMessage}</p>
-          </div>
+          </motion.div>
         )}
       </motion.div>
     )
