@@ -1,261 +1,128 @@
 # RouteMinds
 
-RouteMinds is an intelligent transit routing and delay prediction system designed to optimize bus routes and provide accurate travel time estimates for Delhi's bus network. It combines historical data, real-time traffic information, and machine learning to deliver efficient transit solutions.
+RouteMinds is a bus route rationalization system for Delhi transit. The current
+repo focus is backend and ML infrastructure: offline training, model artifacts,
+and the FastAPI backend that will later orchestrate prediction and routing.
 
-## 🚀 Features
+## Current Status
 
-- **Intelligent Route Optimization**: Recommends optimal bus routes based on historical performance and real-time conditions
-- **Delay Prediction**: Predicts bus delays using machine learning models trained on historical data
-- **Real-Time Integration**: Supports real-time traffic data integration for accurate predictions
-- **Scalable Architecture**: Built on FastAPI with a modular, service-oriented design
-- **Production-Ready**: Includes health checks, exception handling, and CORS support
+- Frontend exists in `apps/web` and shared UI exists in `packages/ui`, but they
+  are out of scope for the current backend/ML work.
+- The backend FastAPI skeleton exists under `api/app/`.
+- The first ML baseline is implemented and trained under `api/training/`.
+- The current baseline uses XGBoost to predict segment travel time from a
+  stop-event simulation dataset converted into segment-level examples.
+- Model artifacts and evaluation metrics are written under `artifacts/`.
 
-## 🛠️ Tech Stack
+## Backend and ML Layout
 
-- **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance Python web framework
-- **Frontend Framework**: [React](https://react.dev/) + [Vite](https://vite.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- **UI Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Machine Learning**: [TensorFlow/Keras](https://www.tensorflow.org/), [Scikit-learn](https://scikit-learn.org/), [XGBoost](https://xgboost.ai/)
-- **Data Processing**: [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/)
-- **Database**: [Firebase Firestore](https://firebase.google.com/docs/firestore) (NoSQL)
-- **Deployment**: Docker, Uvicorn, Gunicorn
-
-## 📂 Project Structure
-
-```
+```text
 RouteMinds/
-├── apps/
-│   └── web/                          # React + Vite frontend app
-│       ├── src/
-│       ├── public/
-│       ├── package.json
-│       ├── vite.config.ts
-│       └── tsconfig.json
-├── packages/
-│   └── ui/                           # Shared UI components/utilities
-│       ├── src/components/
-│       ├── src/hooks/
-│       ├── src/lib/
-│       └── package.json
 ├── api/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── v1/
-│   │   │       ├── health.py         # Health check endpoints
-│   │   │       ├── predictions.py    # Delay prediction endpoints
-│   │   │       └── routes.py         # Route optimization endpoints
-│   │   ├── core/
-│   │   │   ├── config.py             # Configuration management
-│   │   │   └── exceptions.py         # Custom exception handling
-│   │   ├── ml/                       # Machine learning models and utilities
-│   │   ├── schemas/                  # Pydantic data models
-│   │   ├── services/                 # Business logic and external integrations
-│   │   └── main.py                   # FastAPI application entry point
-│   ├── requirements.txt              # Python dependencies
-│   └── environment.yml               # Conda environment configuration
-├── bun.lock                          # Bun lockfile
-├── package.json                      # Workspace + Turbo scripts
-├── turbo.json                        # Turbo task pipeline
-└── data/                             # Datasets and model artifacts
+│   ├── app/                  FastAPI app, future inference and routing services
+│   ├── training/             Offline training code and notebook workflow
+│   ├── tests/                Training pipeline tests
+│   ├── TRAINING.md           Detailed training workflow notes
+│   ├── environment.yml       Conda environment definition
+│   └── requirements.txt      Python package list
+├── data/
+│   └── raw/
+│       └── simulation/       Local simulation dataset placement
+├── artifacts/
+│   ├── models/               Saved trained pipelines and schemas
+│   └── metrics/              Saved evaluation outputs and config snapshots
+├── apps/
+│   └── web/                  Frontend app (not modified in current ML/backend work)
+└── packages/
+    └── ui/                   Shared frontend UI package (not modified)
 ```
 
-## ⚙️ Setup
+## Baseline Model
 
-### Prerequisites
+The current baseline is a two-part training workflow:
 
-- Bun 1.2+ (workspace package manager/runtime)
-- Python 3.11+
-- Node.js 20+ (optional, recommended for compatibility)
-- Conda (recommended for backend environment management)
-- Docker (optional, for containerized backend deployment)
+- `smoke`: a smaller stop-level run on `delay_minutes` to validate the pipeline
+- `canonical`: the main segment-level XGBoost regressor on
+  `actual_segment_minutes`
 
-### Installation
+The canonical model is the important one for routing because graph edges need
+segment travel cost, not cumulative stop delay.
 
-1. **Clone the repository**
+High-level training flow:
 
-   ```bash
-   git clone <repository-url>
-   cd RouteMinds
-   ```
+1. Load the stop-event simulation Parquet dataset
+2. Group by `trip_id` and derive segment rows from consecutive stops
+3. Compute segment targets:
+   - `scheduled_segment_minutes`
+   - `actual_segment_minutes`
+   - `segment_delay_minutes`
+4. Split train/validation/test by whole trips to reduce leakage
+5. Fit an XGBoost regression pipeline
+6. Save the trained model, schema, metrics, and config snapshot
 
-2. **Set up backend (`api/`)**
+## Training
 
-   ```bash
-   cd api
-   conda env create -f environment.yml
-   conda activate route_minds
-   pip install -r requirements.txt
-   ```
+Use only the Conda environment `route_minds`.
 
-3. **Configure backend environment variables**
-   Create a `.env` file in the `api/` directory:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Edit `.env` with your configuration:
-
-   ```env
-   # Application settings
-   APP_NAME="RouteMinds API"
-   APP_VERSION="1.0.0"
-   DEBUG=true
-
-   # Firebase configuration
-   FIREBASE_CREDENTIALS_PATH="path/to/serviceAccountKey.json"
-   FIREBASE_PROJECT_ID="your-project-id"
-
-   # Model paths
-   MODEL_PATH="path/to/your/model.pkl"
-   ```
-
-4. **Install monorepo dependencies (root workspace)**
-
-   ```bash
-   bun install
-   ```
-
-## 🏃 Running the App
-
-### Backend (Development Mode)
+Notebook-first workflow:
 
 ```bash
 cd api
-uvicorn app.main:app --reload --host [IP_ADDRESS] --port 8000
+conda run -n route_minds jupyter notebook
 ```
 
-### Frontend (Development Mode)
+Open:
 
-```bash
-bun run dev
-```
+- `training/notebooks/01_xgboost_baseline.ipynb`
 
-This runs the Turbo `dev` pipeline and starts the web app (`apps/web`) locally.
+Run the notebook cells in order. The notebook bootstraps `api/` into
+`sys.path`, so `training.*` imports work even if Jupyter opens from the notebook
+directory.
 
-### Frontend (Other common tasks)
-
-```bash
-bun run typecheck
-bun run lint
-bun run build
-```
-
-### Backend (Production Mode)
+CLI workflow:
 
 ```bash
 cd api
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b [IP_ADDRESS]:8000
+conda run -n route_minds python -m training.train_xgboost
 ```
 
-## 🧪 Testing
+The active training config is:
 
-### Health Check
+- `api/training/config/default_config.toml`
 
-```bash
-curl http://localhost:8000/api/v1/health
-```
+The detailed training notes are in:
 
-### API Documentation
+- `api/TRAINING.md`
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+## Dataset and Artifacts
 
-### Frontend App
+Current simulation source dataset:
 
-- **Vite Dev Server**: shown in terminal (usually http://localhost:5173)
+- `data/raw/simulation/bus_delay_simulation.parquet`
 
-## 🏗️ Architecture
+Key outputs after training:
 
-### Backend Architecture
+- `artifacts/models/xgboost_segment_travel_time_model.joblib`
+- `artifacts/models/xgboost_segment_travel_time_schema.json`
+- `artifacts/metrics/xgboost_segment_travel_time_metrics.json`
+- `artifacts/metrics/xgboost_stop_delay_smoke_metrics.json`
 
-### Service Layers
+## Backend Status
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    FastAPI Application                      │
-│  (Routing, Middleware, Exception Handling)                  │
-└─────────────────────────────────────────────────────────────┘
-                               │
-┌──────────────────────────────┴──────────────────────────────┐
-│                         API Layer                             │
-│  /health, /routes, /predictions                             │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────┴──────────────────────────────┐
-│                        Services Layer                         │
-│  - RouteService: Route optimization logic                   │
-│  - PredictionService: Delay prediction logic                │
-│  - FirebaseService: Database integration                    │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────┴──────────────────────────────┐
-│                        ML Layer                             │
-│  - DelayPredictionModel: TensorFlow/Keras models            │
-│  - RouteOptimizationModel: XGBoost/Scikit-learn             │
-│  - FeatureEngineering: Data preprocessing                   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────┴──────────────────────────────┐
-│                        Data Layer                           │
-│  - Firebase Firestore: Real-time data storage               │
-│  - Local Files: Model artifacts, historical data            │
-└─────────────────────────────────────────────────────────────┘
-```
+Current backend state:
 
-## 🎯 ML Models
+- `api/app/main.py` wires the FastAPI app and routers
+- `/api/v1/health` is available
+- route optimization and prediction endpoints are still placeholders
+- inference-side model loading utilities exist, but end-to-end API integration
+  is not complete yet
 
-### Delay Prediction Model
+## Next Recommended Step
 
-- **Framework**: TensorFlow/Keras
-- **Input Features**: Time-based (hour, day, month), route-based, weather conditions
-- **Output**: Predicted delay in minutes
-- **Location**: `api/app/ml/models/delay_prediction_model.h5`
+The next backend milestone is real-time enrichment and inference integration:
 
-### Route Optimization Model
-
-- **Framework**: XGBoost, Scikit-learn
-- **Input Features**: Route characteristics, demand patterns, traffic data
-- **Output**: Optimal route recommendations
-- **Location**: `api/app/ml/models/route_optimization_model.pkl`
-
-## 📦 Deployment
-
-### Docker Deployment
-
-1. **Build the Docker image**
-
-   ```bash
-   docker build -t routeminds-api .
-   ```
-
-2. **Run the container**
-   ```bash
-   docker run -d -p 8000:8000 --env-file .env routeminds-api
-   ```
-
-### Kubernetes Deployment
-
-See `kubernetes/` directory for deployment manifests:
-
-```bash
-kubectl apply -f kubernetes/deployment.yaml
-kubectl apply -f kubernetes/service.yaml
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-2. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-3. Push to the branch (`git push origin feature/AmazingFeature`)
-4. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📞 Support
-
-For issues or questions, please open an issue in the repository.
+1. ingest raw GTFS-RT vehicle snapshots
+2. join them with GTFS static trip/stop-time context
+3. reconstruct the same segment feature contract used in training
+4. call the trained model for segment travel-time prediction
+5. feed predicted segment costs into the future routing engine
