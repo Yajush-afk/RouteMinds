@@ -49,6 +49,11 @@ Primary notebook workflow:
 
    - `training/notebooks/01_xgboost_baseline.ipynb`
 
+Use the `route_minds` kernel inside Jupyter. Starting the notebook server from
+`api/` is still preferred, but the notebook now bootstraps the `api/` root into
+`sys.path`, so `training.*` imports also work when launched from
+`api/training/notebooks/`.
+
 Optional script entrypoint:
 
 ```bash
