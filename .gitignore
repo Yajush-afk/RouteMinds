@@ -76,3 +76,6 @@ artifacts/models/**
 !artifacts/models/**/
 !artifacts/models/README.md
 artifacts/metrics/*.json
+
+#misc
+.codex
