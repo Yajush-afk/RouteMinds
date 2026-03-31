@@ -1,0 +1,84 @@
+# RouteMinds training defaults for the simulation stop-event Parquet.
+
+[data]
+dataset_path = "data/raw/simulation/bus_delay_simulation.parquet"
+file_format = "parquet"
+trip_id_column = "trip_id"
+route_id_column = "route_id"
+stop_id_column = "stop_id"
+stop_sequence_column = "stop_sequence"
+scheduled_time_column = "scheduled_arrival_unix"
+actual_time_column = "gps_timestamp"
+stop_delay_column = "delay_minutes"
+sample_rows = 0
+
+[split]
+train_fraction = 0.8
+validation_fraction = 0.1
+test_fraction = 0.1
+group_by = "trip_id"
+sort_by = "trip_start_scheduled_unix"
+
+[targets]
+canonical_target = "actual_segment_minutes"
+secondary_target = "segment_delay_minutes"
+smoke_target = "delay_minutes"
+
+[stop_smoke_features]
+categorical = [
+  "route_id",
+  "stop_id",
+]
+numeric = [
+  "stop_sequence",
+  "normalized_stop_position",
+  "distance_to_prev_stop_km",
+  "hour_of_day",
+  "day_of_week",
+  "prev_delay",
+  "rolling_delay_3",
+]
+drop = [
+  "trip_id",
+]
+
+[segment_features]
+categorical = [
+  "route_id",
+  "from_stop_id",
+  "to_stop_id",
+]
+numeric = [
+  "stop_sequence",
+  "normalized_stop_position",
+  "distance_to_prev_stop_km",
+  "hour_of_day",
+  "day_of_week",
+  "prev_segment_delay",
+  "rolling_segment_delay_3",
+  "scheduled_segment_minutes",
+]
+drop = [
+  "trip_id",
+]
+
+[smoke]
+enabled = true
+sample_rows = 200000
+
+[model]
+n_estimators = 400
+max_depth = 8
+learning_rate = 0.05
+subsample = 0.85
+colsample_bytree = 0.85
+reg_alpha = 0.0
+reg_lambda = 1.0
+random_state = 42
+
+[artifacts]
+model_path = "artifacts/models/xgboost_segment_travel_time_model.joblib"
+metrics_path = "artifacts/metrics/xgboost_segment_travel_time_metrics.json"
+schema_path = "artifacts/models/xgboost_segment_travel_time_schema.json"
+config_snapshot_path = "artifacts/metrics/xgboost_segment_travel_time_config_snapshot.json"
+smoke_metrics_path = "artifacts/metrics/xgboost_stop_delay_smoke_metrics.json"

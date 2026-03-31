@@ -5,6 +5,11 @@ __pycache__/
 .DS_Store
 venv/
 *.csv
+*.parquet
+*.joblib
+*.pkl
+*.ubj
+*.bin
 
 #logs
 *.log
@@ -24,6 +29,7 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+.ipynb_checkpoints/
 *.suo
 *.ntvs*
 *.njsproj
@@ -61,3 +67,12 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
+
+# ML data and artifacts
+data/raw/**
+!data/raw/**/
+!data/raw/**/README.md
+artifacts/models/**
+!artifacts/models/**/
+!artifacts/models/README.md
+artifacts/metrics/*.json
