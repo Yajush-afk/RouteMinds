@@ -38,8 +38,8 @@ export default function FAQSection() {
 
   return (
     <section id="faqs"
-      style={{ fontFamily: "'Syne', sans-serif" }}
-      className="bg-[#F5F5F0] px-8 md:px-16 lg:px-24 py-24"
+       style={{ fontFamily: "Bespoke Slab, sans-serif", fontWeight: 400 }}
+      className="bg-[#F5F5F0] px-8 md:px-16 lg:px-24 py-24 "
     >
       <div className="max-w-3xl mx-auto">
         {/* Header */}
@@ -47,18 +47,18 @@ export default function FAQSection() {
           <p className="text-xs tracking-widest uppercase text-[#8B7D3A] font-semibold mb-3">
             Got Questions?
           </p>
-          <h2 className="text-4xl md:text-5xl font-bold text-[#1a1a1a]">
+          <h2 className="text-4xl md:text-5xl font-bold text-[#1a1a1a]"  style={{ fontFamily: " Poppins, sans-serif", fontWeight: 600 }}>
             Frequently Asked Questions
           </h2>
           <div className="w-10 h-1 bg-[#8B7D3A] mx-auto mt-4 rounded-full"></div>
         </div>
 
         {/* FAQ Items */}
-        <div className="space-y-3">
+        <div className="space-y-3 ">
           {faqs.map((faq, index) => (
             <div
               key={index}
-              className="bg-white border border-gray-100 shadow-sm overflow-hidden"
+              className="bg-white border border-gray-100 shadow-sm overflow-hidden rounded-2xl"
             >
               <button
                 onClick={() => toggle(index)}
