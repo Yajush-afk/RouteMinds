@@ -140,9 +140,9 @@ export default function FeaturesSection() {
           {/* Next Button */}
           <button
             onClick={goNext}
-            className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors flex-shrink-0"
+            className="size-10 rounded-full border border-gray-500 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors flex-shrink-0"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4" color="#00000050"/>
           </button>
 
         </div>
