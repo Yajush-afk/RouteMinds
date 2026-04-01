@@ -15,23 +15,23 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
 from xgboost import XGBRegressor
 
-from training.config import (
+from api.training.config import (
     FeatureConfig,
     TrainingConfig,
     load_training_config,
     resolve_repo_path,
     serialize_training_config,
 )
-from training.data import (
+from api.training.data import (
     annotate_trip_start,
     derive_segment_dataset,
     load_dataset,
     split_dataset,
     take_group_row_budget,
 )
-from training.features import build_training_frame, derive_time_features
+from api.training.features import build_training_frame
 
-DEFAULT_CONFIG_PATH = "training/config/default_config.toml"
+DEFAULT_CONFIG_PATH = "api/training/config/default_config.toml"
 
 
 @dataclass(slots=True)
@@ -59,57 +59,6 @@ def parse_args() -> argparse.Namespace:
         help="Path to the training TOML config, relative to api/ or repo root.",
     )
     return parser.parse_args()
-
-
-def build_pipeline(config: TrainingConfig) -> Pipeline:
-    categorical_transformer = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            (
-                "encoder",
-                OrdinalEncoder(
-                    handle_unknown="use_encoded_value",
-                    unknown_value=-1,
-                    encoded_missing_value=-1,
-                ),
-            ),
-        ]
-    )
-
-    numeric_transformer = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-        ]
-    )
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("categorical", categorical_transformer, config.segment_features.categorical),
-            ("numeric", numeric_transformer, config.segment_features.numeric),
-        ],
-        remainder="drop",
-    )
-
-    regressor = XGBRegressor(
-        objective="reg:squarederror",
-        tree_method="hist",
-        n_estimators=config.model.n_estimators,
-        max_depth=config.model.max_depth,
-        learning_rate=config.model.learning_rate,
-        subsample=config.model.subsample,
-        colsample_bytree=config.model.colsample_bytree,
-        reg_alpha=config.model.reg_alpha,
-        reg_lambda=config.model.reg_lambda,
-        random_state=config.model.random_state,
-        n_jobs=-1,
-    )
-
-    return Pipeline(
-        steps=[
-            ("preprocessor", preprocessor),
-            ("model", regressor),
-        ]
-    )
 
 
 def build_experiment_pipeline(
@@ -181,7 +130,6 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def prepare_datasets(config: TrainingConfig) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     raw_dataframe = load_dataset(config)
-    raw_dataframe = derive_time_features(raw_dataframe, config)
     stop_smoke_dataframe = annotate_trip_start(raw_dataframe, config)
     segment_dataframe = derive_segment_dataset(raw_dataframe, config)
     return raw_dataframe, stop_smoke_dataframe, segment_dataframe
@@ -265,6 +213,7 @@ def save_experiment_artifacts(
         "categorical_features": canonical_result.feature_config.categorical,
         "numeric_features": canonical_result.feature_config.numeric,
         "drop_columns": canonical_result.feature_config.drop,
+        "feature_time_column": canonical_result.feature_config.feature_time_column,
         "group_by": config.split.group_by,
         "sort_by": config.split.sort_by,
     }

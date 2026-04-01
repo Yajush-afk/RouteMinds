@@ -41,6 +41,7 @@ numeric = [
 drop = [
   "trip_id",
 ]
+feature_time_column = "scheduled_arrival_unix"
 
 [segment_features]
 categorical = [
@@ -61,6 +62,7 @@ numeric = [
 drop = [
   "trip_id",
 ]
+feature_time_column = "segment_start_scheduled_unix"
 
 [smoke]
 enabled = true

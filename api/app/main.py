@@ -1,11 +1,11 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.core.exceptions import RouteMindsException, routeminds_exception_handler
-from app.api.v1.health import router as health_router
-from app.api.v1.routes import router as routes_router
-from app.api.v1.predictions import router as predictions_router
+from api.app.core.config import settings
+from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
+from api.app.api.v1.health import router as health_router
+from api.app.api.v1.routes import router as routes_router
+from api.app.api.v1.predictions import router as predictions_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

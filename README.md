@@ -56,9 +56,10 @@ High-level training flow:
    - `scheduled_segment_minutes`
    - `actual_segment_minutes`
    - `segment_delay_minutes`
-4. Split train/validation/test by whole trips to reduce leakage
-5. Fit an XGBoost regression pipeline
-6. Save the trained model, schema, metrics, and config snapshot
+4. Derive temporal features from scheduled/query-time inputs, not realized GPS event time
+5. Split train/validation/test by whole trips to reduce leakage
+6. Fit an XGBoost regression pipeline
+7. Save the trained model, schema, metrics, and config snapshot
 
 ## Training
 
@@ -75,15 +76,14 @@ Open:
 
 - `training/notebooks/01_xgboost_baseline.ipynb`
 
-Run the notebook cells in order. The notebook bootstraps `api/` into
-`sys.path`, so `training.*` imports work even if Jupyter opens from the notebook
+Run the notebook cells in order. The notebook bootstraps repo root into
+`sys.path`, so `api.*` imports work even if Jupyter opens from the notebook
 directory.
 
 CLI workflow:
 
 ```bash
-cd api
-conda run -n route_minds python -m training.train_xgboost
+conda run -n route_minds python -m api.training.train_xgboost
 ```
 
 The active training config is:
@@ -116,6 +116,12 @@ Current backend state:
 - route optimization and prediction endpoints are still placeholders
 - inference-side model loading utilities exist, but end-to-end API integration
   is not complete yet
+
+Run the backend from the repo root with:
+
+```bash
+conda run -n route_minds uvicorn api.app.main:app --reload
+```
 
 ## Next Recommended Step
 
