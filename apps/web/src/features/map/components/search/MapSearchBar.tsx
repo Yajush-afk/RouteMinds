@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useMemo, useRef, useState } from "react"
 import type { KeyboardEvent } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import {
@@ -131,7 +131,9 @@ function MapSearchBar({
     if (event.key === "ArrowDown") {
       event.preventDefault()
       setActiveField("from")
-      setHighlightedIndex((normalizedHighlightedIndex + 1) % originResults.length)
+      setHighlightedIndex(
+        (normalizedHighlightedIndex + 1) % originResults.length
+      )
       return
     }
 
@@ -209,47 +211,24 @@ function MapSearchBar({
         }}
         className="absolute top-full z-20 mt-2 w-full overflow-hidden rounded-[1.2rem] border border-white/55 bg-white/46 p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-2xl supports-backdrop-filter:bg-white/38"
       >
-        <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-br from-white/34 via-white/10 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent" />
+        <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-linear-to-br from-white/34 via-white/10 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-linear-to-r from-transparent via-white/90 to-transparent" />
 
         {isSearching ? (
-          <motion.div
-            initial={prefersReducedMotion ? false : { opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: prefersReducedMotion ? 0 : 0.22,
-              ease: "easeOut",
-            }}
-            className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/58 px-3 py-2.5 text-sm text-slate-600"
-          >
+          <div className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/58 px-3 py-2.5 text-sm text-slate-600">
             <LoaderCircle className="size-4 animate-spin text-slate-500" />
             <p>Searching locations...</p>
-          </motion.div>
+          </div>
         ) : null}
 
         {!isSearching ? (
-          <motion.ul
-            initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: prefersReducedMotion ? 0 : 0.24,
-              ease: "easeOut",
-            }}
-            className="max-h-52 overflow-y-auto rounded-[0.95rem] border border-slate-200/70 bg-white"
-          >
+          <ul className="max-h-52 overflow-y-auto rounded-[0.95rem] border border-slate-200/70 bg-white">
             {results.map((result, index) => (
-              <motion.li
+              <li
                 key={result.id}
                 className={cn(
                   index > 0 ? "border-t border-slate-200/80" : undefined
                 )}
-                initial={prefersReducedMotion ? false : { opacity: 0, y: -12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: prefersReducedMotion ? 0 : 0.22,
-                  delay: prefersReducedMotion ? 0 : 0.06 + index * 0.045,
-                  ease: "easeOut",
-                }}
               >
                 <button
                   type="button"
@@ -280,24 +259,16 @@ function MapSearchBar({
                     <span className="min-w-0 leading-snug">{result.label}</span>
                   </span>
                 </button>
-              </motion.li>
+              </li>
             ))}
-          </motion.ul>
+          </ul>
         ) : null}
 
         {!isSearching && showNoResults && results.length === 0 && (
-          <motion.div
-            initial={prefersReducedMotion ? false : { opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: prefersReducedMotion ? 0 : 0.22,
-              ease: "easeOut",
-            }}
-            className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/56 px-3 py-2.5 text-sm text-slate-600"
-          >
+          <div className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/56 px-3 py-2.5 text-sm text-slate-600">
             <CircleAlert className="size-4 text-slate-500" />
             <p>{emptyMessage}</p>
-          </motion.div>
+          </div>
         )}
       </motion.div>
     )
@@ -305,7 +276,7 @@ function MapSearchBar({
 
   function getFieldClassName() {
     return cn(
-      "min-h-12 rounded-[1rem] border border-slate-200 bg-white px-1.5 shadow-none transition-[box-shadow,border-color] duration-250 ease-out dark:!border-slate-200 dark:!bg-white dark:hover:!border-slate-300 has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot=input-group-control]:focus-visible]:shadow-[0_6px_10px_4px_rgba(15,23,42,0.08)] hover:border-slate-300 hover:bg-white"
+      "min-h-12 rounded-[1rem] border border-slate-200 bg-white px-1.5 shadow-none transition-[box-shadow,border-color] duration-250 ease-out hover:border-slate-300 hover:bg-white has-[[data-slot=input-group-control]:focus-visible]:shadow-[0_6px_10px_4px_rgba(15,23,42,0.08)] has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:!border-slate-200 dark:!bg-white dark:hover:!border-slate-300"
     )
   }
 
@@ -347,14 +318,14 @@ function MapSearchBar({
                 event.currentTarget.select()
               }
             }}
-          onChange={(event) => onOriginChange(event.target.value)}
-          onBlur={onOriginBlur}
-          onKeyDown={handleOriginKeyDown}
-          className="h-12 px-3 text-[15px] font-medium text-slate-800 placeholder:text-slate-500"
-        />
+            onChange={(event) => onOriginChange(event.target.value)}
+            onBlur={onOriginBlur}
+            onKeyDown={handleOriginKeyDown}
+            className="h-12 px-3 text-[15px] font-medium text-slate-800 placeholder:text-slate-500"
+          />
           <InputGroupAddon
             align="inline-start"
-            className="pl-2.5 pr-0 text-slate-500"
+            className="pr-0 pl-2.5 text-slate-500"
           >
             <span className={getIconBadgeClassName()}>
               <MapPinned className="size-3.5" />
@@ -408,7 +379,7 @@ function MapSearchBar({
           />
           <InputGroupAddon
             align="inline-start"
-            className="pl-2.5 pr-0 text-slate-500"
+            className="pr-0 pl-2.5 text-slate-500"
           >
             <span className={getIconBadgeClassName()}>
               <Flag className="size-3.5" />
@@ -417,19 +388,19 @@ function MapSearchBar({
         </InputGroup>
 
         <AnimatePresence initial={false}>
-          {isDestinationOpen ? (
-            renderResultsPanel(
-              destinationResults,
-              isDestinationSearching,
-              showNoDestinationResults,
-              onDestinationSelect,
-              "No destinations found in Delhi."
-            )
-          ) : null}
+          {isDestinationOpen
+            ? renderResultsPanel(
+                destinationResults,
+                isDestinationSearching,
+                showNoDestinationResults,
+                onDestinationSelect,
+                "No destinations found in Delhi."
+              )
+            : null}
         </AnimatePresence>
       </motion.div>
     </motion.div>
   )
 }
 
-export default MapSearchBar
+export default memo(MapSearchBar)

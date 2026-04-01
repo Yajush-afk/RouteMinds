@@ -1,3 +1,5 @@
+import { memo } from "react"
+
 import { Marker } from "react-map-gl/maplibre"
 import type { MarkerDragEvent } from "react-map-gl/maplibre"
 
@@ -52,4 +54,4 @@ function SelectedLocationMarker({
   )
 }
 
-export default SelectedLocationMarker
+export default memo(SelectedLocationMarker)

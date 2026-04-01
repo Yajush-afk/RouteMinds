@@ -1,5 +1,6 @@
+import { memo } from "react"
+
 import { LocateFixed, Minus, Plus } from "lucide-react"
-import { motion, useReducedMotion } from "motion/react"
 
 import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
@@ -17,26 +18,12 @@ function MapControls({
   onZoomIn,
   onZoomOut,
 }: MapControlsProps) {
-  const prefersReducedMotion = useReducedMotion()
   const sharedButtonClassName =
     "border border-slate-200 bg-white text-slate-700 shadow-none transition-[box-shadow,border-color,color,background-color] duration-250 ease-out hover:border-slate-300 hover:!bg-white hover:shadow-[0_4px_8px_2px_rgba(15,23,42,0.06)] focus-visible:border-slate-300 focus-visible:ring-0 focus-visible:shadow-[0_6px_10px_4px_rgba(15,23,42,0.08)]"
 
   return (
-    <motion.div
-      initial={prefersReducedMotion ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: prefersReducedMotion ? 0 : 0.28 }}
-      className="pointer-events-auto absolute right-5 bottom-16 z-850 flex flex-col items-center gap-2.5"
-    >
-      <motion.div
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 28 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: prefersReducedMotion ? 0 : 0.45,
-          delay: prefersReducedMotion ? 0 : 0.08,
-          ease: [0.16, 1, 0.3, 1],
-        }}
-      >
+    <div className="pointer-events-auto absolute right-5 bottom-16 z-850 flex flex-col items-center gap-2.5">
+      <div className="transition-opacity duration-200 ease-out motion-reduce:transition-none">
         <Button
           type="button"
           size="icon-lg"
@@ -57,18 +44,9 @@ function MapControls({
             )}
           />
         </Button>
-      </motion.div>
+      </div>
 
-      <motion.div
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 28 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: prefersReducedMotion ? 0 : 0.45,
-          delay: prefersReducedMotion ? 0 : 0.24,
-          ease: [0.16, 1, 0.3, 1],
-        }}
-        className="flex flex-col gap-1.5 rounded-[1.15rem]"
-      >
+      <div className="flex flex-col gap-1.5 rounded-[1.15rem] transition-opacity duration-200 ease-out motion-reduce:transition-none">
         <Button
           type="button"
           size="icon"
@@ -90,9 +68,9 @@ function MapControls({
         >
           <Minus className="size-4" />
         </Button>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   )
 }
 
-export default MapControls
+export default memo(MapControls)
