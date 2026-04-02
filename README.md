@@ -142,6 +142,13 @@ Required request fields per segment:
 - `prev_segment_delay`
 - `rolling_segment_delay_3`
 
+GTFS static files for backend graph construction live under:
+
+- `data/raw/stops.txt`
+- `data/raw/routes.txt`
+- `data/raw/trips.txt`
+- `data/raw/stop_times.txt`
+
 ## Next Recommended Step
 
 The next backend milestone is real-time enrichment and inference integration:

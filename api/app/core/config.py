@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     MODEL_PATH: str = "artifacts/models/xgboost_segment_travel_time_model.joblib"
     SCHEMA_PATH: str = "artifacts/models/xgboost_segment_travel_time_schema.json"
+    GTFS_STATIC_DIR: str = "data/raw"
 
     @field_validator("DEBUG", mode="before")
     @classmethod
