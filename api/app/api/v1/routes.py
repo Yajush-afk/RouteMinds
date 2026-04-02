@@ -7,6 +7,7 @@ from api.app.schemas.routes import (
 )
 from api.app.services.gtfs_graph_service import GTFSGraphService
 from api.app.services.prediction_service import PredictionService
+from api.app.services.realtime_enrichment_service import get_realtime_enrichment_service
 from api.app.services.route_optimization_service import RouteOptimizationService
 
 router = APIRouter(prefix="/routes", tags=["Routes"])
@@ -18,7 +19,11 @@ def get_route_optimization_service() -> RouteOptimizationService:
         model_path=settings.MODEL_PATH,
         schema_path=settings.SCHEMA_PATH,
     )
-    return RouteOptimizationService(graph_service, prediction_service)
+    return RouteOptimizationService(
+        graph_service,
+        prediction_service,
+        realtime_enrichment_service=get_realtime_enrichment_service(),
+    )
 
 
 @router.post("/optimize", response_model=RouteOptimizationResponse)

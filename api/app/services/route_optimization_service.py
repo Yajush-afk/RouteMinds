@@ -10,6 +10,7 @@ from api.app.services.gtfs_graph_service import (
     StaticTransitGraph,
 )
 from api.app.services.prediction_service import PredictionService
+from api.app.services.realtime_enrichment_service import RealtimeEnrichmentService
 
 MIN_EDGE_WEIGHT_MINUTES = 0.01
 
@@ -26,9 +27,11 @@ class RouteOptimizationService:
         self,
         graph_service: GTFSGraphService,
         prediction_service: PredictionService,
+        realtime_enrichment_service: RealtimeEnrichmentService | None = None,
     ):
         self.graph_service = graph_service
         self.prediction_service = prediction_service
+        self.realtime_enrichment_service = realtime_enrichment_service
 
     def optimize_route(
         self,
@@ -142,23 +145,42 @@ class RouteOptimizationService:
             return
 
         segment_records = [
-            {
-                "route_id": edge.route_id,
-                "from_stop_id": edge.from_stop_id,
-                "to_stop_id": edge.to_stop_id,
-                "stop_sequence": edge.stop_sequence,
-                "normalized_stop_position": edge.normalized_stop_position,
-                "distance_to_prev_stop_km": edge.distance_to_prev_stop_km,
-                "segment_start_scheduled_unix": query_timestamp_unix,
-                "scheduled_segment_minutes": edge.scheduled_segment_minutes,
-                "prev_segment_delay": 0.0,
-                "rolling_segment_delay_3": 0.0,
-            }
+            self._build_segment_record(edge, query_timestamp_unix)
             for edge in uncached_edges
         ]
         predictions = self.prediction_service.predict_segments(segment_records)
         for edge, prediction in zip(uncached_edges, predictions, strict=True):
             edge_prediction_cache[edge] = prediction
+
+    def _build_segment_record(
+        self,
+        edge: SegmentEdge,
+        query_timestamp_unix: int,
+    ) -> dict[str, str | int | float]:
+        prev_segment_delay = 0.0
+        rolling_segment_delay_3 = 0.0
+        if self.realtime_enrichment_service:
+            live_context = self.realtime_enrichment_service.get_segment_live_context(
+                edge.route_id,
+                edge.from_stop_id,
+                edge.to_stop_id,
+            )
+            if live_context:
+                prev_segment_delay = live_context.prev_segment_delay
+                rolling_segment_delay_3 = live_context.rolling_segment_delay_3
+
+        return {
+            "route_id": edge.route_id,
+            "from_stop_id": edge.from_stop_id,
+            "to_stop_id": edge.to_stop_id,
+            "stop_sequence": edge.stop_sequence,
+            "normalized_stop_position": edge.normalized_stop_position,
+            "distance_to_prev_stop_km": edge.distance_to_prev_stop_km,
+            "segment_start_scheduled_unix": query_timestamp_unix,
+            "scheduled_segment_minutes": edge.scheduled_segment_minutes,
+            "prev_segment_delay": prev_segment_delay,
+            "rolling_segment_delay_3": rolling_segment_delay_3,
+        }
 
     def _reconstruct_edges(
         self,

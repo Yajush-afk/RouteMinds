@@ -4,6 +4,7 @@ from api.app.schemas.predictions import (
     SegmentPredictionRequest,
     SegmentPredictionResponse,
 )
+from api.app.schemas.realtime import RealtimeRefreshResponse, RealtimeStatusResponse
 from api.app.schemas.routes import (
     RouteOptimizationRequest,
     RouteOptimizationResponse,
@@ -16,6 +17,8 @@ __all__ = [
     "SegmentPrediction",
     "SegmentPredictionRequest",
     "SegmentPredictionResponse",
+    "RealtimeRefreshResponse",
+    "RealtimeStatusResponse",
     "RouteOptimizationRequest",
     "RouteOptimizationResponse",
     "RouteSegmentPrediction",

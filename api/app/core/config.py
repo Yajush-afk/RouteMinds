@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     MODEL_PATH: str = "artifacts/models/xgboost_segment_travel_time_model.joblib"
     SCHEMA_PATH: str = "artifacts/models/xgboost_segment_travel_time_schema.json"
     GTFS_STATIC_DIR: str = "data/raw"
+    GTFS_RT_VEHICLE_POSITIONS_URL: str = ""
+    GTFS_RT_API_KEY: str = ""
+    GTFS_RT_REFRESH_INTERVAL_SECONDS: int = 60
+    GTFS_RT_SNAPSHOT_PATH: str = ""
 
     @field_validator("DEBUG", mode="before")
     @classmethod

@@ -161,6 +161,20 @@ Required request fields:
 - `destination_stop_id`
 - `query_timestamp_unix`
 
+Phase 4 real-time operational endpoints:
+
+```text
+POST /api/v1/realtime/refresh
+GET /api/v1/realtime/status
+```
+
+Required real-time backend settings:
+
+- `GTFS_RT_VEHICLE_POSITIONS_URL`
+- `GTFS_RT_API_KEY`
+- `GTFS_RT_REFRESH_INTERVAL_SECONDS`
+- `GTFS_RT_SNAPSHOT_PATH` (optional)
+
 ## Next Recommended Step
 
 The next backend milestone is real-time enrichment and inference integration:

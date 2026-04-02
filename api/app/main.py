@@ -6,6 +6,7 @@ from api.app.core.exceptions import RouteMindsException, routeminds_exception_ha
 from api.app.api.v1.health import router as health_router
 from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.predictions import router as predictions_router
+from api.app.api.v1.realtime import router as realtime_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +36,7 @@ API_V1_PREFIX = "/api/v1"
 app.include_router(health_router, prefix=API_V1_PREFIX)
 app.include_router(routes_router, prefix=API_V1_PREFIX)
 app.include_router(predictions_router, prefix=API_V1_PREFIX)
+app.include_router(realtime_router, prefix=API_V1_PREFIX)
 
 @app.get("/", tags=["Root"])
 async def root():
