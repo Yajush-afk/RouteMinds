@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import unittest
+from unittest.mock import patch
+
+import httpx
+
+from api.app.core.exceptions import RouteNotFoundException, StopNotFoundException
+from api.app.main import app
+from api.app.services.gtfs_graph_service import SegmentEdge, StaticTransitGraph, StopNode
+from api.app.services.route_optimization_service import RouteOptimizationService
+
+
+class StubPredictionService:
+    def __init__(self, weights: dict[tuple[str, str], float]):
+        self.weights = weights
+
+    def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
+        predictions = []
+        for record in segment_records:
+            key = (str(record["from_stop_id"]), str(record["to_stop_id"]))
+            predicted_actual = self.weights[key]
+            predictions.append(
+                {
+                    "predicted_actual_segment_minutes": predicted_actual,
+                    "predicted_segment_delay_minutes": predicted_actual
+                    - float(record["scheduled_segment_minutes"]),
+                }
+            )
+        return predictions
+
+
+class StubGraphService:
+    def __init__(self, graph: StaticTransitGraph):
+        self.graph = graph
+
+    def get_graph(self) -> StaticTransitGraph:
+        return self.graph
+
+
+def build_test_graph() -> StaticTransitGraph:
+    stops = {
+        "A": StopNode("A", "Stop A", 28.70, 77.10),
+        "B": StopNode("B", "Stop B", 28.71, 77.11),
+        "C": StopNode("C", "Stop C", 28.72, 77.12),
+        "D": StopNode("D", "Stop D", 28.73, 77.13),
+    }
+    edges = (
+        SegmentEdge("R1", "A", "B", 1, 0.5, 1.0, 5.0),
+        SegmentEdge("R1", "B", "C", 2, 1.0, 1.0, 5.0),
+        SegmentEdge("R2", "A", "C", 1, 1.0, 2.0, 20.0),
+    )
+    return StaticTransitGraph(
+        stops_by_id=stops,
+        edges=edges,
+        edges_from_stop={
+            "A": (edges[0], edges[2]),
+            "B": (edges[1],),
+        },
+    )
+
+
+class RouteOptimizationServiceTests(unittest.TestCase):
+    def test_service_chooses_lowest_total_predicted_path(self) -> None:
+        graph_service = StubGraphService(build_test_graph())
+        prediction_service = StubPredictionService(
+            {
+                ("A", "B"): 4.0,
+                ("B", "C"): 4.0,
+                ("A", "C"): 12.0,
+            }
+        )
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        result = service.optimize_route("A", "C", 1742803800)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+        self.assertEqual(len(result.segments), 2)
+        self.assertAlmostEqual(result.total_predicted_eta_minutes, 8.0)
+
+    def test_same_origin_and_destination_returns_zero_eta(self) -> None:
+        graph_service = StubGraphService(build_test_graph())
+        prediction_service = StubPredictionService({})
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        result = service.optimize_route("A", "A", 1742803800)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A"])
+        self.assertEqual(result.segments, [])
+        self.assertEqual(result.total_predicted_eta_minutes, 0.0)
+
+    def test_unknown_stop_raises_not_found(self) -> None:
+        graph_service = StubGraphService(build_test_graph())
+        prediction_service = StubPredictionService({})
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        with self.assertRaises(StopNotFoundException):
+            service.optimize_route("UNKNOWN", "C", 1742803800)
+
+    def test_unreachable_stop_raises_route_not_found(self) -> None:
+        graph_service = StubGraphService(build_test_graph())
+        prediction_service = StubPredictionService(
+            {
+                ("A", "B"): 4.0,
+                ("B", "C"): 4.0,
+                ("A", "C"): 12.0,
+            }
+        )
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        with self.assertRaises(RouteNotFoundException):
+            service.optimize_route("A", "D", 1742803800)
+
+
+class StubRouteOptimizationApiService:
+    def optimize_route(
+        self,
+        origin_stop_id: str | int,
+        destination_stop_id: str | int,
+        query_timestamp_unix: int,
+    ):
+        if str(origin_stop_id) == "UNKNOWN":
+            raise StopNotFoundException(str(origin_stop_id))
+        if str(destination_stop_id) == "UNREACHABLE":
+            raise RouteNotFoundException(str(origin_stop_id), str(destination_stop_id))
+        return type(
+            "Result",
+            (),
+            {
+                "stops": [
+                    {
+                        "stop_id": "A",
+                        "stop_name": "Stop A",
+                        "stop_lat": 28.70,
+                        "stop_lon": 77.10,
+                    },
+                    {
+                        "stop_id": "B",
+                        "stop_name": "Stop B",
+                        "stop_lat": 28.71,
+                        "stop_lon": 77.11,
+                    },
+                ],
+                "segments": [
+                    {
+                        "route_id": "R1",
+                        "from_stop_id": "A",
+                        "to_stop_id": "B",
+                        "stop_sequence": 1,
+                        "normalized_stop_position": 1.0,
+                        "distance_to_prev_stop_km": 1.2,
+                        "scheduled_segment_minutes": 5.0,
+                        "predicted_actual_segment_minutes": 4.5,
+                        "predicted_segment_delay_minutes": -0.5,
+                    }
+                ],
+                "total_predicted_eta_minutes": 4.5,
+            },
+        )()
+
+
+class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
+    async def _post_route(self, payload: dict) -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            return await client.post("/api/v1/routes/optimize", json=payload)
+
+    async def test_valid_request_returns_path_and_eta(self) -> None:
+        with patch(
+            "api.app.api.v1.routes.get_route_optimization_service",
+            return_value=StubRouteOptimizationApiService(),
+        ):
+            response = await self._post_route(
+                {
+                    "origin_stop_id": "A",
+                    "destination_stop_id": "B",
+                    "query_timestamp_unix": 1742803800,
+                }
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["stops"]), 2)
+        self.assertEqual(len(payload["segments"]), 1)
+        self.assertEqual(payload["total_predicted_eta_minutes"], 4.5)
+
+    async def test_unknown_stop_returns_404(self) -> None:
+        with patch(
+            "api.app.api.v1.routes.get_route_optimization_service",
+            return_value=StubRouteOptimizationApiService(),
+        ):
+            response = await self._post_route(
+                {
+                    "origin_stop_id": "UNKNOWN",
+                    "destination_stop_id": "B",
+                    "query_timestamp_unix": 1742803800,
+                }
+            )
+
+        self.assertEqual(response.status_code, 404)
+
+    async def test_no_route_returns_404(self) -> None:
+        with patch(
+            "api.app.api.v1.routes.get_route_optimization_service",
+            return_value=StubRouteOptimizationApiService(),
+        ):
+            response = await self._post_route(
+                {
+                    "origin_stop_id": "A",
+                    "destination_stop_id": "UNREACHABLE",
+                    "query_timestamp_unix": 1742803800,
+                }
+            )
+
+        self.assertEqual(response.status_code, 404)
+
+    async def test_missing_required_field_returns_422(self) -> None:
+        response = await self._post_route(
+            {
+                "origin_stop_id": "A",
+                "query_timestamp_unix": 1742803800,
+            }
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+
+if __name__ == "__main__":
+    unittest.main()

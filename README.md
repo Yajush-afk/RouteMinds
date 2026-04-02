@@ -149,6 +149,18 @@ GTFS static files for backend graph construction live under:
 - `data/raw/trips.txt`
 - `data/raw/stop_times.txt`
 
+Phase 3 route optimization endpoint:
+
+```text
+POST /api/v1/routes/optimize
+```
+
+Required request fields:
+
+- `origin_stop_id`
+- `destination_stop_id`
+- `query_timestamp_unix`
+
 ## Next Recommended Step
 
 The next backend milestone is real-time enrichment and inference integration:
