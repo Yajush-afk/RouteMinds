@@ -123,6 +123,25 @@ Run the backend from the repo root with:
 conda run -n route_minds uvicorn api.app.main:app --reload
 ```
 
+Phase 1 prediction endpoint:
+
+```text
+POST /api/v1/predictions/segments
+```
+
+Required request fields per segment:
+
+- `route_id`
+- `from_stop_id`
+- `to_stop_id`
+- `stop_sequence`
+- `normalized_stop_position`
+- `distance_to_prev_stop_km`
+- `segment_start_scheduled_unix`
+- `scheduled_segment_minutes`
+- `prev_segment_delay`
+- `rolling_segment_delay_3`
+
 ## Next Recommended Step
 
 The next backend milestone is real-time enrichment and inference integration:
