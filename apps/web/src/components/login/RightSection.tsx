@@ -2,9 +2,8 @@ import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 import { Separator } from "@workspace/ui/components/separator"
-import { Link } from "react-router-dom"
 
-export default function Form() {
+export default function RightSection() {
   return (
     <div className="flex flex-col justify-center px-12 py-16 bg-white"
       style={{ fontFamily: "'Poppins', sans-serif" }}
@@ -12,7 +11,7 @@ export default function Form() {
       <div className="max-w-sm w-full mx-auto">
 
         <h1 className="text-3xl font-medium text-[#1a1a1a] mb-2">
-          Create an account
+          Login your account
         </h1>
         <p className="text-[#555] text-sm mb-8">
           Let's get started with RouteMinds.
@@ -21,24 +20,13 @@ export default function Form() {
         <div className="space-y-5">
 
           <div className="space-y-1.5">
-            <Label htmlFor="name" className="text-sm font-medium text-[#1a1a1a]">
-              Name
-            </Label>
-            <Input
-              id="name"
-              type="text"
-              placeholder="Enter your name"
-             className= " w-full px-3 py-2 rounded-md !border !border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 hover:!border-gray-400 focus:!border-gray-900 focus:!ring-1 focus:!ring-gray-900/20 focus:!outline-none transition-all duration-150"/>
-          </div>
-
-          <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium text-[#1a1a1a]">
               Email
             </Label>
             <Input
-              id="email"
-              type="email"
-              placeholder="Enter your email"
+             id="email"
+             type="email"
+             placeholder="Enter your email"
              className= " w-full px-3 py-2 rounded-md !border !border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 hover:!border-gray-400 focus:!border-gray-900 focus:!ring-1 focus:!ring-gray-900/20 focus:!outline-none transition-all duration-150"/>
           </div>
 
@@ -57,7 +45,7 @@ export default function Form() {
           <Button
             className="w-full bg-[#1a1a1a] text-white hover:bg-[#333] transition-colors shadow-xl/20"
           >
-            Create account
+            Login
           </Button>
 
           <div className="flex items-center gap-3">
@@ -76,17 +64,10 @@ export default function Form() {
               <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18z"/>
               <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.3z"/>
             </svg>
-            Sign up with Google
+            Login with Google
           </Button>
 
         </div>
-
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Already have an account?{" "}
-          <Link to="/login" className="text-black font-semibold hover:underline">
-            Log in
-          </Link>
-        </p>
 
       </div>
     </div>

@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 import { createNoise3D } from "simplex-noise";
 
-export default function ImageSection() {
+export default function LeftSection() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -16,11 +16,11 @@ export default function ImageSection() {
     let animationId: number;
     let nt = 0;
 
-    // Matched to landing page: amber/gold + warm dark tones
+    
     const colors = [
       "#C9A84C", // gold
       "#E8C84A", // bright amber
-      "#A67C2E", // deep gold
+      "#AE67C2", // deep gold
       "#F0D060", // warm yellow
       "#8B6914", // dark amber
     ];
@@ -77,9 +77,9 @@ export default function ImageSection() {
         style={{ filter: "blur(12px)" }}
       />
 
-      {/* Overlay content */}
+     
       <div className="absolute inset-0 z-10 flex flex-col justify-end px-12 pb-16">
-        {/* Logo mark */}
+      
         <div className="mb-6">
           
 
