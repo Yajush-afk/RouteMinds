@@ -116,6 +116,7 @@ Current backend state:
 - `/api/v1/routes/optimize` computes stop-to-stop paths using predicted segment costs
 - `/api/v1/realtime/refresh` and `/api/v1/realtime/status` manage live GTFS-RT ingestion
 - GTFS static graph construction, route optimization, and live enrichment are implemented
+- Auth0 JWT verification protects route optimization and realtime operational endpoints
 
 Run the backend from the repo root with:
 
@@ -168,6 +169,21 @@ POST /api/v1/realtime/refresh
 GET /api/v1/realtime/status
 ```
 
+Protected backend endpoints:
+
+- `/api/v1/routes/optimize`
+- `/api/v1/realtime/refresh`
+- `/api/v1/realtime/status`
+
+Auth0 backend settings:
+
+- `AUTH0_ENABLED`
+- `AUTH0_DOMAIN`
+- `AUTH0_AUDIENCE`
+- `AUTH0_ISSUER`
+- `AUTH0_ALGORITHMS`
+- `AUTH0_REALTIME_REQUIRED_PERMISSION`
+
 Required real-time backend settings:
 
 - `GTFS_RT_VEHICLE_POSITIONS_URL`
@@ -178,3 +194,6 @@ Required real-time backend settings:
 - `GTFS_RT_REFRESH_INTERVAL_SECONDS`
 - `GTFS_RT_CACHE_MAX_AGE_SECONDS`
 - `GTFS_RT_SNAPSHOT_PATH` (optional)
+
+`GTFS_RT_REFRESH_INTERVAL_SECONDS` is used by the FastAPI background refresher to
+periodically pull live vehicle positions when realtime is configured.
