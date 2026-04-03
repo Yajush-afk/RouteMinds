@@ -1,11 +1,33 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
 import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
 
 export default function Navbar() {
+  const [isScrolled, setIsScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 12)
+    }
+
+    handleScroll()
+    window.addEventListener("scroll", handleScroll, { passive: true })
+
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
   return (
     <nav className="fixed inset-x-0 top-0 z-50 px-4 pt-4 md:px-6">
-      <div className="mx-auto flex max-w-7xl items-center justify-between rounded-xl border border-border/50 bg-background/75 px-5 py-3 shadow-sm backdrop-blur-md">
+      <div
+        className={cn(
+          "mx-auto flex max-w-7xl items-center justify-between rounded-xl bg-background/75 px-5 py-3 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200",
+          isScrolled
+            ? "border border-border/50 shadow-sm"
+            : "border border-transparent shadow-none"
+        )}
+      >
         <Link
           to="/"
           className="landing-heading text-lg tracking-tight text-foreground md:text-xl"
