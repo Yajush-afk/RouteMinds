@@ -5,11 +5,19 @@ import asyncio
 from unittest.mock import MagicMock, patch
 
 import httpx
-from fastapi import HTTPException
 from starlette.requests import Request
 
-from api.app.core.auth import get_auth0_verifier, require_auth
+from api.app.core.auth import (
+    get_auth0_verifier,
+    require_auth,
+    require_realtime_access,
+)
 from api.app.core.config import settings
+from api.app.core.exceptions import (
+    AuthConfigurationException,
+    AuthenticationException,
+    AuthorizationException,
+)
 from api.app.main import app
 from api.tests.test_prediction_api import make_segment_payload
 
@@ -21,6 +29,7 @@ class AuthDependencyTests(unittest.TestCase):
         self.original_auth0_audience = settings.AUTH0_AUDIENCE
         self.original_auth0_issuer = settings.AUTH0_ISSUER
         self.original_auth0_algorithms = settings.AUTH0_ALGORITHMS
+        self.original_auth0_realtime_permission = settings.AUTH0_REALTIME_REQUIRED_PERMISSION
         get_auth0_verifier.cache_clear()
 
     def tearDown(self) -> None:
@@ -29,6 +38,7 @@ class AuthDependencyTests(unittest.TestCase):
         settings.AUTH0_AUDIENCE = self.original_auth0_audience
         settings.AUTH0_ISSUER = self.original_auth0_issuer
         settings.AUTH0_ALGORITHMS = self.original_auth0_algorithms
+        settings.AUTH0_REALTIME_REQUIRED_PERMISSION = self.original_auth0_realtime_permission
         get_auth0_verifier.cache_clear()
 
     def test_require_auth_returns_disabled_claims_when_auth_is_off(self) -> None:
@@ -43,7 +53,7 @@ class AuthDependencyTests(unittest.TestCase):
         settings.AUTH0_ENABLED = True
         request = Request({"type": "http", "headers": []})
 
-        with self.assertRaises(HTTPException) as context:
+        with self.assertRaises(AuthenticationException) as context:
             asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 401)
 
@@ -68,9 +78,52 @@ class AuthDependencyTests(unittest.TestCase):
         settings.AUTH0_DOMAIN = ""
         settings.AUTH0_AUDIENCE = ""
 
-        with self.assertRaises(HTTPException) as context:
+        with self.assertRaises(AuthConfigurationException) as context:
             get_auth0_verifier()
         self.assertEqual(context.exception.status_code, 503)
+
+    def test_require_auth_returns_service_error_when_jwks_lookup_fails(self) -> None:
+        settings.AUTH0_ENABLED = True
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        request = Request(
+            {
+                "type": "http",
+                "headers": [(b"authorization", b"Bearer test-token")],
+            }
+        )
+
+        with patch(
+            "api.app.core.auth.get_auth0_verifier",
+            side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
+        ):
+            with self.assertRaises(AuthConfigurationException) as context:
+                asyncio.run(require_auth(request))
+        self.assertEqual(context.exception.status_code, 503)
+
+    def test_require_realtime_access_rejects_missing_permission(self) -> None:
+        settings.AUTH0_ENABLED = True
+        settings.AUTH0_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
+
+        with self.assertRaises(AuthorizationException) as context:
+            asyncio.run(require_realtime_access({"sub": "auth0|user", "scope": "route:read"}))
+        self.assertEqual(context.exception.status_code, 403)
+
+    def test_require_realtime_access_accepts_scope_or_permissions_claim(self) -> None:
+        settings.AUTH0_ENABLED = True
+        settings.AUTH0_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
+
+        scope_claims = asyncio.run(
+            require_realtime_access({"sub": "auth0|user", "scope": "route:read realtime:manage"})
+        )
+        permission_claims = asyncio.run(
+            require_realtime_access(
+                {"sub": "auth0|user", "permissions": ["realtime:manage"]}
+            )
+        )
+
+        self.assertEqual(scope_claims["sub"], "auth0|user")
+        self.assertEqual(permission_claims["sub"], "auth0|user")
 
 
 class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
