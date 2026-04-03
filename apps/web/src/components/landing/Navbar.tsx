@@ -1,35 +1,75 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import {motion} from "motion/react"
+
+import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
 
 export default function Navbar() {
+  const [isScrolled, setIsScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 12)
+    }
+
+    handleScroll()
+    window.addEventListener("scroll", handleScroll, { passive: true })
+
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
   return (
-    <nav
-     style={{ fontFamily: "'Poppins', sans-serif" }}
-     className="fixed top-4 left-4 right-4 z-50 bg-white/70 backdrop-blur-md border border-gray-200/50  px-8 py-4 flex items-center justify-between shadow-sm rounded-2xl"    >
-      {/* Logo */}
-      <Link to="/" className="text-[#1a1a1a] text-xl font-bold tracking-tight">
-        RouteMinds
-      </Link>
-
-      {/* Nav Links */}
-      <div className="hidden md:flex items-center gap-6">
-  <a href="#about" className="text-[#1a1a1a] text-base  hover:text-[#8B7D3A] transition-colors">About</a>
-  <a href="#features" className="text-[#1a1a1a] text-base  hover:text-[#8B7D3A] transition-colors">Features</a>
-   <a href="#why-delhi" className="text-[#1a1a1a] text-base  hover:text-[#8B7D3A] transition-colors">Why Delhi?</a>
-  <a href="#faqs" className="text-[#1a1a1a] text-base  hover:text-[#8B7D3A] transition-colors">FAQs</a>
-</div>
-
-      {/* Sign Up Button */}
-      <Link to='/signup'>
-      <motion.button
-      whileHover={{scale: 1.05, y: -1}}
-      whileTap={{scale: 0.9, y: 1}}
-      transition={{type:"spring"}}
-        className="bg-[#1a1a1a] text-white text-sm font-semibold px-5 py-2.5 rounded-md hover:bg-[#333] transition-colors"
+    <nav className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-4 md:px-6">
+      <div
+        className={cn(
+          "mx-auto flex max-w-7xl items-center justify-between rounded-xl bg-background/75 px-4 py-2.5 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200 sm:px-5 sm:py-3",
+          isScrolled
+            ? "border border-border/50 shadow-sm"
+            : "border border-transparent shadow-none"
+        )}
       >
-        Sign Up
-      </motion.button>
-      </Link>
+        <Link
+          to="/"
+          className="landing-heading text-base tracking-tight text-foreground sm:text-lg md:text-xl"
+        >
+          RouteMinds
+        </Link>
+
+        <div className="hidden items-center gap-8 md:flex">
+          <a
+            href="#about"
+            className="text-sm text-foreground transition-colors hover:text-primary"
+          >
+            About
+          </a>
+          <a
+            href="#features"
+            className="text-sm text-foreground transition-colors hover:text-primary"
+          >
+            Features
+          </a>
+          <a
+            href="#why-delhi"
+            className="text-sm text-foreground transition-colors hover:text-primary"
+          >
+            Why Delhi?
+          </a>
+          <a
+            href="#faqs"
+            className="text-sm text-foreground transition-colors hover:text-primary"
+          >
+            FAQs
+          </a>
+        </div>
+
+        <Button
+          asChild
+          variant="outline"
+          className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
+        >
+          <Link to="/map">Sign Up</Link>
+        </Button>
+      </div>
     </nav>
   )
 }

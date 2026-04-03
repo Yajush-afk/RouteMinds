@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import importlib
+import json
+import tempfile
 import unittest
 
 import pandas as pd
 
-from training.config import (
+from api.app.ml.predictor import SegmentTravelTimePredictor
+from api.common.features import prepare_model_frame
+from api.training.config import (
     ArtifactConfig,
     DataConfig,
     FeatureConfig,
@@ -14,8 +19,8 @@ from training.config import (
     TargetConfig,
     TrainingConfig,
 )
-from training.data import annotate_trip_start, derive_segment_dataset, split_dataset
-from training.features import build_training_frame
+from api.training.data import annotate_trip_start, derive_segment_dataset, split_dataset
+from api.training.features import build_training_frame
 
 
 def make_config() -> TrainingConfig:
@@ -43,6 +48,7 @@ def make_config() -> TrainingConfig:
                 "rolling_delay_3",
             ],
             drop=["trip_id"],
+            feature_time_column="scheduled_arrival_unix",
         ),
         segment_features=FeatureConfig(
             categorical=["route_id", "from_stop_id", "to_stop_id"],
@@ -57,6 +63,7 @@ def make_config() -> TrainingConfig:
                 "scheduled_segment_minutes",
             ],
             drop=["trip_id"],
+            feature_time_column="segment_start_scheduled_unix",
         ),
         smoke=SmokeConfig(enabled=True, sample_rows=10),
         model=ModelConfig(n_estimators=10, max_depth=3),
@@ -222,8 +229,12 @@ class TrainingPipelineTests(unittest.TestCase):
         self.assertEqual(len(segment_dataframe), 5)
 
         first_trip_rows = segment_dataframe[segment_dataframe["trip_id"] == "trip_a"]
-        self.assertEqual(first_trip_rows.iloc[0]["from_stop_id"], 100.0)
+        self.assertEqual(first_trip_rows.iloc[0]["from_stop_id"], 100)
         self.assertEqual(first_trip_rows.iloc[0]["to_stop_id"], 101)
+        self.assertAlmostEqual(
+            first_trip_rows.iloc[0]["segment_start_scheduled_unix"],
+            60.0,
+        )
         self.assertAlmostEqual(first_trip_rows.iloc[0]["scheduled_segment_minutes"], 1.0)
         self.assertAlmostEqual(first_trip_rows.iloc[0]["actual_segment_minutes"], 1.1)
         self.assertAlmostEqual(first_trip_rows.iloc[0]["segment_delay_minutes"], 0.1)
@@ -261,6 +272,98 @@ class TrainingPipelineTests(unittest.TestCase):
             config.segment_features.categorical + config.segment_features.numeric,
         )
         self.assertEqual(target.name, config.targets.canonical_target)
+        self.assertEqual(str(features["route_id"].dtype), "string")
+        self.assertEqual(str(features["from_stop_id"].dtype), "string")
+        self.assertEqual(str(features["to_stop_id"].dtype), "string")
+
+    def test_temporal_features_use_configured_forecast_time(self) -> None:
+        dataframe = pd.DataFrame(
+            [
+                {
+                    "scheduled_arrival_unix": 0,
+                    "gps_timestamp": 23 * 3600,
+                }
+            ]
+        )
+
+        prepared = prepare_model_frame(
+            dataframe,
+            categorical_columns=[],
+            numeric_columns=["hour_of_day", "day_of_week"],
+            feature_time_column="scheduled_arrival_unix",
+        )
+
+        self.assertEqual(prepared.loc[0, "hour_of_day"], 0)
+        self.assertEqual(prepared.loc[0, "day_of_week"], 3)
+
+    def test_alphanumeric_stop_ids_are_preserved_and_normalized(self) -> None:
+        config = make_config()
+        raw_dataframe = make_raw_dataframe().copy()
+        raw_dataframe["stop_id"] = [
+            "STOP_A",
+            "STOP_B",
+            "STOP_C",
+            "STOP_D",
+            "STOP_E",
+            "STOP_F",
+            "STOP_G",
+            "STOP_H",
+            "STOP_I",
+        ]
+
+        segment_dataframe = derive_segment_dataset(raw_dataframe, config)
+        features, _ = build_training_frame(
+            segment_dataframe,
+            config.segment_features,
+            config.targets.canonical_target,
+        )
+
+        self.assertEqual(features.iloc[0]["from_stop_id"], "STOP_A")
+        self.assertEqual(features.iloc[0]["to_stop_id"], "STOP_B")
+        self.assertEqual(str(features["from_stop_id"].dtype), "string")
+        self.assertEqual(str(features["to_stop_id"].dtype), "string")
+
+    def test_repo_root_imports_resolve_under_api_namespace(self) -> None:
+        training_module = importlib.import_module("api.training.train_xgboost")
+        predictor_module = importlib.import_module("api.app.ml.predictor")
+
+        self.assertTrue(hasattr(training_module, "train"))
+        self.assertTrue(hasattr(predictor_module, "SegmentTravelTimePredictor"))
+
+    def test_training_and_serving_share_feature_preparation(self) -> None:
+        config = make_config()
+        segment_dataframe = derive_segment_dataset(make_raw_dataframe(), config)
+        records = (
+            segment_dataframe.drop(columns=["hour_of_day", "day_of_week"])
+            .head(2)
+            .to_dict(orient="records")
+        )
+
+        with tempfile.NamedTemporaryFile("w+", suffix=".json") as schema_file:
+            json.dump(
+                {
+                    "categorical_features": config.segment_features.categorical,
+                    "numeric_features": config.segment_features.numeric,
+                    "feature_time_column": config.segment_features.feature_time_column,
+                },
+                schema_file,
+            )
+            schema_file.flush()
+            predictor = SegmentTravelTimePredictor(
+                model_path="unused.joblib",
+                schema_path=schema_file.name,
+            )
+            serving_frame = predictor._prepare_dataframe(records)
+
+        training_frame, _ = build_training_frame(
+            segment_dataframe.head(2).drop(columns=["hour_of_day", "day_of_week"]),
+            config.segment_features,
+            config.targets.canonical_target,
+        )
+
+        self.assertListEqual(list(serving_frame.columns), list(training_frame.columns))
+        self.assertEqual(serving_frame.iloc[0]["hour_of_day"], training_frame.iloc[0]["hour_of_day"])
+        self.assertEqual(serving_frame.iloc[0]["day_of_week"], training_frame.iloc[0]["day_of_week"])
 
 
 if __name__ == "__main__":

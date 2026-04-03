@@ -1,20 +1,22 @@
-import delhiTraffic from "@/assets/bradyn-trollip-TiPYSWJqWCM-unsplash.jpg"
-import {motion} from "motion/react"
+import delhiTraffic from "@/assets/bradyn-trollip-TiPYSWJqWCM-unsplash-optimized.jpg"
+import { motion } from "motion/react"
 
 const container = {
-  hidden: {opacity: 0},
-  visible: {opacity: 1, transition: {staggerChildren: 0.2, delayChildren: 0.15}},
-};
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.2, delayChildren: 0.15 },
+  },
+}
 
 const item = {
-  hidden: {opacity: 0, y: 20},
-  visible: {opacity: 1, y: 0},
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
   transition: {
-      duration: 5,
-      ease: [0.25, 0.1, 0.25, 1] 
-    },
-};
-
+    duration: 5,
+    ease: [0.25, 0.1, 0.25, 1],
+  },
+}
 
 const reasons = [
   {
@@ -39,48 +41,63 @@ const reasons = [
 
 export default function WhyDelhiSection() {
   return (
-    <section id="why-delhi"
-      style={{ fontFamily: "Bespoke Slab, sans-serif", fontWeight: 400 }}
-      className="bg-white px-8 md:px-16 lg:px-24 py-24"
+    <section
+      id="why-delhi"
+      className="bg-background px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-
+      <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 sm:gap-12 md:grid-cols-2 md:gap-16">
         {/* Left - Image */}
-        <div className="relative rounded-2xl overflow-hidden shadow-lg">
+        <div className="relative overflow-hidden rounded-2xl shadow-lg">
           <img
             src={delhiTraffic}
             alt="Delhi Traffic"
-            className="w-full h-[350px] object-cover hover:scale-110 transition-transform duration-500"
+            loading="lazy"
+            decoding="async"
+            className="h-64 w-full object-cover transition-transform duration-500 sm:h-80 md:h-[350px] md:hover:scale-110"
           />
-          <div className="absolute bottom-6 left-6 bg-white/90 backdrop-blur-sm rounded-xl px-4 py-3 shadow-md">
-            <p className="text-xs text-gray-400 uppercase tracking-widest">Daily Commuters</p>
-            <p className="text-2xl font-bold text-[#1a1a1a]">14M+</p>
+          <div className="absolute bottom-4 left-4 rounded-xl bg-background/90 px-3 py-2 shadow-md backdrop-blur-sm sm:bottom-6 sm:left-6 sm:px-4 sm:py-3">
+            <p className="text-xs tracking-widest text-muted-foreground uppercase">
+              Daily Commuters
+            </p>
+            <p className="landing-heading text-xl text-foreground sm:text-2xl">
+              14M+
+            </p>
           </div>
         </div>
 
         {/* Right - Content */}
-        <div className="space-y-10">
+        <div className="space-y-8 sm:space-y-10">
           <div>
-            <p className="text-xs tracking-widest uppercase text-[#8B7D3A] font-semibold mb-3" >
+            <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
               Why Delhi?
             </p>
-            <h2 className="text-4xl md:text-5xl font-bold text-[#1a1a1a] leading-tight" style={{ fontFamily: " Poppins , sans-serif", fontWeight: 600 }}>
+            <h2 className="landing-heading text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
               A City Where Time <br />
-              <span className="text-[#8B7D3A]">is Unpredictable.</span>
+              <span className="text-primary">is Unpredictable.</span>
             </h2>
           </div>
 
-          <motion.div className="space-y-8" variants={container} initial="hidden" whileInView="visible" viewport={{ once: false,  margin: "-50px"  }} style={{ listStyle: "none" }}>
+          <motion.div
+            className="list-none space-y-6 sm:space-y-8"
+            variants={container}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: false, margin: "-50px" }}
+          >
             {reasons.map((reason) => (
-              <motion.div key={reason.number} className="flex gap-6 items-start" variants={item} >
-                <span className="text-3xl font-bold text-gray-300 leading-none flex-shrink-0"  >
+              <motion.div
+                key={reason.number}
+                className="flex items-start gap-4 sm:gap-6"
+                variants={item}
+              >
+                <span className="flex-shrink-0 text-2xl leading-none font-bold text-border sm:text-3xl">
                   {reason.number}
                 </span>
                 <div>
-                  <h3 className="text-base font-bold text-[#1a1a1a] mb-1" >
+                  <h3 className="landing-heading mb-1 text-base text-foreground">
                     {reason.title}
                   </h3>
-                  <p className="text-[#555] text-sm leading-relaxed" >
+                  <p className="text-sm leading-relaxed text-muted-foreground">
                     {reason.description}
                   </p>
                 </div>
@@ -88,7 +105,6 @@ export default function WhyDelhiSection() {
             ))}
           </motion.div>
         </div>
-
       </div>
     </section>
   )

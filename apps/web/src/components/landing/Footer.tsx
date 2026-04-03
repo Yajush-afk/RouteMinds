@@ -1,10 +1,7 @@
 export default function Footer() {
   return (
-    <footer
-      style={{ fontFamily: "'Poppins', sans-serif" }}
-      className="bg-[#F5F5F0]  px-8 md:px-16 lg:px-24 py-6 flex items-center justify-center"
-    >
-      <span className="text-gray-400 text-xs font-light">
+    <footer className="flex items-center justify-center bg-background px-4 py-5 text-center sm:px-6 sm:py-6 md:px-10 lg:px-24">
+      <span className="text-xs font-light text-muted-foreground sm:text-sm">
         © 2026 OpenMinds. All rights reserved.
       </span>
     </footer>

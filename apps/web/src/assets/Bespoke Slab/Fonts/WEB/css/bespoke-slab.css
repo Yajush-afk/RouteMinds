@@ -1,0 +1,19 @@
+/**
+* @license
+*
+* Font Family: Bespoke Slab
+* Designed by: Jérémie Hornus, Théo Guillard, Morgane Pambrun, Alisa Nowak, Joachim Vu
+* URL: https://www.fontshare.com/fonts/bespoke-slab
+* © 2026 Indian Type Foundry
+*
+* Bespoke Slab Regular 
+
+*
+*/
+@font-face {
+  font-family: "BespokeSlab-Regular";
+  src: url("../fonts/BespokeSlab-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}

@@ -1,5 +1,12 @@
-import { useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { Fragment } from "react"
+
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@workspace/ui/components/accordion"
+import { Separator } from "@workspace/ui/components/separator"
 
 const faqs = [
   {
@@ -30,59 +37,42 @@ const faqs = [
 ]
 
 export default function FAQSection() {
-  const [openIndex, setOpenIndex] = useState<number | null>(null)
-
-  const toggle = (index: number) => {
-    setOpenIndex(openIndex === index ? null : index)
-  }
-
   return (
-    <section id="faqs"
-       style={{ fontFamily: "Bespoke Slab, sans-serif", fontWeight: 400 }}
-      className="bg-[#F5F5F0] px-8 md:px-16 lg:px-24 py-24 "
+    <section
+      id="faqs"
+      className="bg-background px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
-      <div className="max-w-3xl mx-auto">
+      <div className="mx-auto max-w-3xl">
         {/* Header */}
-        <div className="text-center mb-12">
-          <p className="text-xs tracking-widest uppercase text-[#8B7D3A] font-semibold mb-3">
+        <div className="mb-10 text-center sm:mb-12">
+          <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
             Got Questions?
           </p>
-          <h2 className="text-4xl md:text-5xl font-bold text-[#1a1a1a]"  style={{ fontFamily: " Poppins, sans-serif", fontWeight: 600 }}>
+          <h2 className="landing-heading text-3xl text-foreground sm:text-4xl md:text-5xl">
             Frequently Asked Questions
           </h2>
-          <div className="w-10 h-1 bg-[#8B7D3A] mx-auto mt-4 rounded-full"></div>
+          <div className="mx-auto mt-4 h-1 w-10 rounded-full bg-primary"></div>
         </div>
 
         {/* FAQ Items */}
-        <div className="space-y-3 ">
+        <Accordion type="single" collapsible>
           {faqs.map((faq, index) => (
-            <div
-              key={index}
-              className="bg-white border border-gray-100 shadow-sm overflow-hidden rounded-2xl"
-            >
-              <button
-                onClick={() => toggle(index)}
-                className="w-full flex items-center justify-between px-6 py-5 text-left"
+            <Fragment key={faq.question}>
+              <AccordionItem
+                value={`item-${index}`}
+                className="border-b-0 not-last:border-b-0"
               >
-                <span className="text-[#1a1a1a] font-semibold text-base">
+                <AccordionTrigger className="landing-heading rounded-xl text-base sm:text-lg">
                   {faq.question}
-                </span>
-                <ChevronDown
-                  className={`w-5 h-5 text-[#8B7D3A] transition-transform duration-300 shrink-0 ml-4 ${
-                    openIndex === index ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-              {openIndex === index && (
-                <div className="px-6 pb-5">
-                  <p className="text-[#555] text-sm leading-relaxed">
-                    {faq.answer}
-                  </p>
-                </div>
-              )}
-            </div>
+                </AccordionTrigger>
+                <AccordionContent className="text-sm leading-relaxed sm:text-base">
+                  {faq.answer}
+                </AccordionContent>
+              </AccordionItem>
+              {index < faqs.length - 1 && <Separator />}
+            </Fragment>
           ))}
-        </div>
+        </Accordion>
       </div>
     </section>
   )
