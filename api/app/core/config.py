@@ -10,6 +10,18 @@ class Settings(BaseSettings):
     APP_NAME: str = "RouteMinds API"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    CORS_ALLOW_ORIGINS: str = (
+        "http://localhost:3000,"
+        "http://127.0.0.1:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173"
+    )
+    AUTH0_ENABLED: bool = False
+    AUTH0_DOMAIN: str = ""
+    AUTH0_AUDIENCE: str = ""
+    AUTH0_ISSUER: str = ""
+    AUTH0_ALGORITHMS: str = "RS256"
+    AUTH0_REALTIME_REQUIRED_PERMISSION: str = "realtime:manage"
 
     MODEL_PATH: str = "artifacts/models/xgboost_segment_travel_time_model.joblib"
     SCHEMA_PATH: str = "artifacts/models/xgboost_segment_travel_time_schema.json"
@@ -33,6 +45,19 @@ class Settings(BaseSettings):
             if normalized in {"1", "true", "yes", "on", "debug", "development"}:
                 return True
             if normalized in {"0", "false", "no", "off", "release", "production"}:
+                return False
+        return value
+
+    @field_validator("AUTH0_ENABLED", mode="before")
+    @classmethod
+    def parse_auth0_enabled(cls, value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "enabled"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "disabled"}:
                 return False
         return value
 

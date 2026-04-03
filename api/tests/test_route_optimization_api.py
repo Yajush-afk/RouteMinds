@@ -4,9 +4,14 @@ import unittest
 from unittest.mock import patch
 
 import httpx
+from pydantic import ValidationError
 
+from api.app.api.v1.routes import optimize_route
+from api.app.core.auth import require_auth
+from api.app.core.config import settings
 from api.app.core.exceptions import RouteNotFoundException, StopNotFoundException
 from api.app.main import app
+from api.app.schemas.routes import RouteOptimizationRequest
 from api.app.services.gtfs_graph_service import SegmentEdge, StaticTransitGraph, StopNode
 from api.app.services.route_optimization_service import RouteOptimizationService
 
@@ -111,6 +116,44 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         with self.assertRaises(RouteNotFoundException):
             service.optimize_route("A", "D", 1742803800)
 
+    def test_service_scores_downstream_edges_with_arrival_time(self) -> None:
+        class TimeAwarePredictionService:
+            def __init__(self):
+                self.timestamps: list[int] = []
+
+            def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
+                predictions = []
+                for record in segment_records:
+                    timestamp = int(record["segment_start_scheduled_unix"])
+                    self.timestamps.append(timestamp)
+                    edge_key = (
+                        str(record["from_stop_id"]),
+                        str(record["to_stop_id"]),
+                    )
+                    if edge_key == ("A", "B"):
+                        predicted_actual = 10.0
+                    elif edge_key == ("A", "C"):
+                        predicted_actual = 30.0
+                    else:
+                        predicted_actual = 5.0
+                    predictions.append(
+                        {
+                            "predicted_actual_segment_minutes": predicted_actual,
+                            "predicted_segment_delay_minutes": predicted_actual
+                            - float(record["scheduled_segment_minutes"]),
+                        }
+                    )
+                return predictions
+
+        graph_service = StubGraphService(build_test_graph())
+        prediction_service = TimeAwarePredictionService()
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        service.optimize_route("A", "C", 1742803800)
+
+        self.assertIn(1742803800, prediction_service.timestamps)
+        self.assertIn(1742804400, prediction_service.timestamps)
+
 
 class StubRouteOptimizationApiService:
     def optimize_route(
@@ -160,6 +203,15 @@ class StubRouteOptimizationApiService:
 
 
 class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.original_auth0_enabled = settings.AUTH0_ENABLED
+        settings.AUTH0_ENABLED = True
+        app.dependency_overrides.clear()
+
+    def tearDown(self) -> None:
+        settings.AUTH0_ENABLED = self.original_auth0_enabled
+        app.dependency_overrides.clear()
+
     async def _post_route(self, payload: dict) -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -173,59 +225,67 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.routes.get_route_optimization_service",
             return_value=StubRouteOptimizationApiService(),
         ):
-            response = await self._post_route(
-                {
-                    "origin_stop_id": "A",
-                    "destination_stop_id": "B",
-                    "query_timestamp_unix": 1742803800,
-                }
+            response = await optimize_route(
+                RouteOptimizationRequest(
+                    origin_stop_id="A",
+                    destination_stop_id="B",
+                    query_timestamp_unix=1742803800,
+                ),
+                _claims={"sub": "auth0|demo-user"},
             )
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(len(payload["stops"]), 2)
-        self.assertEqual(len(payload["segments"]), 1)
-        self.assertEqual(payload["total_predicted_eta_minutes"], 4.5)
+        self.assertEqual(len(response.stops), 2)
+        self.assertEqual(len(response.segments), 1)
+        self.assertEqual(response.total_predicted_eta_minutes, 4.5)
 
     async def test_unknown_stop_returns_404(self) -> None:
         with patch(
             "api.app.api.v1.routes.get_route_optimization_service",
             return_value=StubRouteOptimizationApiService(),
         ):
-            response = await self._post_route(
-                {
-                    "origin_stop_id": "UNKNOWN",
-                    "destination_stop_id": "B",
-                    "query_timestamp_unix": 1742803800,
-                }
-            )
-
-        self.assertEqual(response.status_code, 404)
+            with self.assertRaises(StopNotFoundException):
+                await optimize_route(
+                    RouteOptimizationRequest(
+                        origin_stop_id="UNKNOWN",
+                        destination_stop_id="B",
+                        query_timestamp_unix=1742803800,
+                    ),
+                    _claims={"sub": "auth0|demo-user"},
+                )
 
     async def test_no_route_returns_404(self) -> None:
         with patch(
             "api.app.api.v1.routes.get_route_optimization_service",
             return_value=StubRouteOptimizationApiService(),
         ):
-            response = await self._post_route(
-                {
-                    "origin_stop_id": "A",
-                    "destination_stop_id": "UNREACHABLE",
-                    "query_timestamp_unix": 1742803800,
-                }
-            )
-
-        self.assertEqual(response.status_code, 404)
+            with self.assertRaises(RouteNotFoundException):
+                await optimize_route(
+                    RouteOptimizationRequest(
+                        origin_stop_id="A",
+                        destination_stop_id="UNREACHABLE",
+                        query_timestamp_unix=1742803800,
+                    ),
+                    _claims={"sub": "auth0|demo-user"},
+                )
 
     async def test_missing_required_field_returns_422(self) -> None:
+        with self.assertRaises(ValidationError):
+            RouteOptimizationRequest(
+                origin_stop_id="A",
+                query_timestamp_unix=1742803800,
+            )
+
+    async def test_missing_bearer_token_returns_401(self) -> None:
         response = await self._post_route(
             {
                 "origin_stop_id": "A",
+                "destination_stop_id": "B",
                 "query_timestamp_unix": 1742803800,
             }
         )
 
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("detail", response.json())
 
 
 if __name__ == "__main__":

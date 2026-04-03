@@ -3,9 +3,15 @@ from fastapi.responses import JSONResponse
 
 
 class RouteMindsException(Exception):
-    def __init__(self, message: str, status_code: int = 500):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 500,
+        headers: dict[str, str] | None = None,
+    ):
         self.message = message
         self.status_code = status_code
+        self.headers = headers or {}
         super().__init__(self.message)
 
 
@@ -42,6 +48,28 @@ class GTFSRealtimeException(RouteMindsException):
         super().__init__(message=message, status_code=status_code)
 
 
+class AuthConfigurationException(RouteMindsException):
+    def __init__(self, message: str):
+        super().__init__(message=message, status_code=503)
+
+
+class AuthenticationException(RouteMindsException):
+    def __init__(self, message: str = "Authentication credentials were not provided."):
+        super().__init__(
+            message=message,
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+class AuthorizationException(RouteMindsException):
+    def __init__(self, message: str = "You do not have permission to access this resource."):
+        super().__init__(
+            message=message,
+            status_code=403,
+        )
+
+
 class RouteNotFoundException(RouteMindsException):
     def __init__(self, source: str, destination: str):
         super().__init__(
@@ -62,4 +90,5 @@ async def routeminds_exception_handler(
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.message},
+        headers=exc.headers,
     )
