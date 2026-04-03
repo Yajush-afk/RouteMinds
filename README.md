@@ -1,16 +1,15 @@
 # RouteMinds
 
-RouteMinds is a bus route rationalization system for Delhi transit. The current
-repo focus is backend and ML infrastructure: offline training, model artifacts,
-and the FastAPI backend that will later orchestrate prediction and routing.
+RouteMinds is a bus route rationalization system for Delhi transit. The repo
+contains the ML training workflow, trained model artifacts, GTFS data inputs,
+and the FastAPI backend for prediction, routing, and realtime enrichment.
 
-## Current Status
+## Project Overview
 
-- Frontend exists in `apps/web` and shared UI exists in `packages/ui`, but they
-  are out of scope for the current backend/ML work.
-- The backend FastAPI skeleton exists under `api/app/`.
-- The first ML baseline is implemented and trained under `api/training/`.
-- The current baseline uses XGBoost to predict segment travel time from a
+- Frontend lives in `apps/web` and shared UI components live in `packages/ui`.
+- Backend APIs and services live under `api/app/`.
+- Offline training code and notebooks live under `api/training/`.
+- The current ML baseline uses XGBoost to predict segment travel time from a
   stop-event simulation dataset converted into segment-level examples.
 - Model artifacts and evaluation metrics are written under `artifacts/`.
 
@@ -19,7 +18,7 @@ and the FastAPI backend that will later orchestrate prediction and routing.
 ```text
 RouteMinds/
 ├── api/
-│   ├── app/                  FastAPI app, future inference and routing services
+│   ├── app/                  FastAPI app, inference, realtime, and routing services
 │   ├── training/             Offline training code and notebook workflow
 │   ├── tests/                Training pipeline tests
 │   ├── TRAINING.md           Detailed training workflow notes
@@ -32,9 +31,9 @@ RouteMinds/
 │   ├── models/               Saved trained pipelines and schemas
 │   └── metrics/              Saved evaluation outputs and config snapshots
 ├── apps/
-│   └── web/                  Frontend app (not modified in current ML/backend work)
+│   └── web/                  Frontend app
 └── packages/
-    └── ui/                   Shared frontend UI package (not modified)
+    └── ui/                   Shared frontend UI package
 ```
 
 ## Baseline Model
@@ -124,7 +123,7 @@ Run the backend from the repo root with:
 conda run -n route_minds uvicorn api.app.main:app --reload
 ```
 
-Phase 1 prediction endpoint:
+Prediction endpoint:
 
 ```text
 POST /api/v1/predictions/segments
@@ -150,7 +149,7 @@ GTFS static files for backend graph construction live under:
 - `data/raw/trips.txt`
 - `data/raw/stop_times.txt`
 
-Phase 3 route optimization endpoint:
+Route optimization endpoint:
 
 ```text
 POST /api/v1/routes/optimize
@@ -162,7 +161,7 @@ Required request fields:
 - `destination_stop_id`
 - `query_timestamp_unix`
 
-Phase 4 real-time operational endpoints:
+Realtime operational endpoints:
 
 ```text
 POST /api/v1/realtime/refresh
@@ -179,13 +178,3 @@ Required real-time backend settings:
 - `GTFS_RT_REFRESH_INTERVAL_SECONDS`
 - `GTFS_RT_CACHE_MAX_AGE_SECONDS`
 - `GTFS_RT_SNAPSHOT_PATH` (optional)
-
-## Next Recommended Step
-
-The next backend milestone is backend auth and demo hardening:
-
-1. add Auth0 JWT verification to protect route and realtime endpoints
-2. tighten realtime trip/segment matching to improve live enrichment coverage
-3. align the frontend/backend contract for the route optimization flow
-4. prepare a demo deployment checklist and environment template
-5. retrain on the collected real-time dataset after the 7-day pull is complete
