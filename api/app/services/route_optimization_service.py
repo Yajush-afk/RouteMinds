@@ -164,6 +164,7 @@ class RouteOptimizationService:
                 edge.route_id,
                 edge.from_stop_id,
                 edge.to_stop_id,
+                reference_timestamp=query_timestamp_unix,
             )
             if live_context:
                 prev_segment_delay = live_context.prev_segment_delay
