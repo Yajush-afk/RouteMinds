@@ -7,6 +7,17 @@ import { defineConfig } from "vite"
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
+    modulePreload: {
+      resolveDependencies(_filename, deps, context) {
+        if (context.hostType !== "html") {
+          return deps
+        }
+
+        return deps.filter(
+          (dep) => !dep.includes("map-vendor") && !dep.includes("MapPage-")
+        )
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {

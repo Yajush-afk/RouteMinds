@@ -8,7 +8,6 @@ import "@workspace/ui/globals.css"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 
-import "maplibre-gl/dist/maplibre-gl.css"
 import { TooltipProvider } from "@workspace/ui/components/tooltip"
 
 createRoot(document.getElementById("root")!).render(

@@ -11,12 +11,9 @@
 *
 */
 @font-face {
-  font-family: 'BespokeSlab-Regular';
-  src: url('../fonts/BespokeSlab-Regular.woff2') format('woff2'),
-       url('../fonts/BespokeSlab-Regular.woff') format('woff'),
-       url('../fonts/BespokeSlab-Regular.ttf') format('truetype');
+  font-family: "BespokeSlab-Regular";
+  src: url("../fonts/BespokeSlab-Regular.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
   font-style: normal;
 }
-

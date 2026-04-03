@@ -1,4 +1,4 @@
-import delhiTraffic from "@/assets/bradyn-trollip-TiPYSWJqWCM-unsplash.jpg"
+import delhiTraffic from "@/assets/bradyn-trollip-TiPYSWJqWCM-unsplash-optimized.jpg"
 import { motion } from "motion/react"
 
 const container = {
@@ -51,6 +51,8 @@ export default function WhyDelhiSection() {
           <img
             src={delhiTraffic}
             alt="Delhi Traffic"
+            loading="lazy"
+            decoding="async"
             className="h-[350px] w-full object-cover transition-transform duration-500 hover:scale-110"
           />
           <div className="absolute bottom-6 left-6 rounded-xl bg-background/90 px-4 py-3 shadow-md backdrop-blur-sm">
