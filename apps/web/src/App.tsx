@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from "react-router-dom"
 
 const LandingPage = lazy(() => import("@/pages/LandingPage"))
 const MapPage = lazy(() => import("@/pages/MapPage"))
+const SignupPage = lazy(() => import("@/pages/SignupPage"))
+const LoginPage = lazy(() => import("@/pages/LoginPage"))
 
 function RouteFallback() {
   return (
@@ -17,6 +19,8 @@ export function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

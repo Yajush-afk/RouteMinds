@@ -149,10 +149,7 @@ export function useMapPlacementState({
           if (originReverseGeocodeAbortRef.current === controller) {
             originReverseGeocodeAbortRef.current = null
           }
-          return
-        }
-
-        if (destinationReverseGeocodeAbortRef.current === controller) {
+        } else if (destinationReverseGeocodeAbortRef.current === controller) {
           destinationReverseGeocodeAbortRef.current = null
         }
       }

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react"
+import { useCallback, useLayoutEffect, useRef } from "react"
 import type { LocationField } from "@/features/map/domain/types"
 import { useMapPlacementState } from "@/features/map/hooks/useMapPlacementState"
 import { useMapSearchState } from "@/features/map/hooks/useMapSearchState"
@@ -25,9 +25,20 @@ export function useMapScreenState() {
     onDestinationSelect: placementState.handleDestinationSelect,
   })
 
-  searchLabelControllerRef.current = {
-    setFieldLabel: searchState.setFieldLabel,
-  }
+  useLayoutEffect(() => {
+    searchLabelControllerRef.current = {
+      setFieldLabel: searchState.setFieldLabel,
+    }
+
+    return () => {
+      if (
+        searchLabelControllerRef.current?.setFieldLabel ===
+        searchState.setFieldLabel
+      ) {
+        searchLabelControllerRef.current = null
+      }
+    }
+  }, [searchState.setFieldLabel])
 
   return {
     mapViewportProps: placementState.mapViewportProps,
