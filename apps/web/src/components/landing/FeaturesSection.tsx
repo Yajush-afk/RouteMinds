@@ -148,7 +148,7 @@ export default function FeaturesSection() {
             {features.map((feature) => (
               <CarouselItem key={feature.title}>
                 <div
-                  className="flex min-h-[240px] flex-col justify-between rounded-2xl border border-border bg-background p-5 sm:min-h-[220px] sm:p-6 md:min-h-50 md:p-8"
+                  className="flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-background p-5 sm:min-h-55 sm:p-6 md:min-h-50 md:p-8"
                   onMouseEnter={() => setIsPaused(true)}
                   onMouseLeave={() => setIsPaused(false)}
                 >

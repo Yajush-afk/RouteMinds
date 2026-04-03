@@ -67,7 +67,7 @@ export default function Navbar() {
           variant="outline"
           className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
         >
-          <Link to="/map">Sign Up</Link>
+          <Link to="/signup">Sign Up</Link>
         </Button>
       </div>
     </nav>
