@@ -100,7 +100,7 @@ export default function FeaturesSection() {
           {/* Prev Button */}
           <button
             onClick={goPrev}
-            className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors flex-shrink-0"
+            className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -115,7 +115,7 @@ export default function FeaturesSection() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: direction * -60 }}
                 transition={{ type: "spring", visualDuration: 0.4, bounce: 0.2 }}
-                className="bg-[#F5F5F0] rounded-2xl p-8 min-h-[200px] flex flex-col justify-between border border-gray-100"
+                className="bg-[#F5F5F0] rounded-2xl p-8 min-h-50 flex flex-col justify-between border border-gray-100"
               >
                 {/* Top row */}
                 <div className="flex items-start justify-between">
@@ -140,7 +140,7 @@ export default function FeaturesSection() {
           {/* Next Button */}
           <button
             onClick={goNext}
-            className="size-10 rounded-full border border-gray-500 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors flex-shrink-0"
+            className="size-10 rounded-full border border-gray-500 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors shrink-0"
           >
             <ChevronRight className="w-4 h-4" color="#00000050"/>
           </button>

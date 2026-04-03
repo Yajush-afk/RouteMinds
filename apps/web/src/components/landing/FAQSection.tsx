@@ -68,7 +68,7 @@ export default function FAQSection() {
                   {faq.question}
                 </span>
                 <ChevronDown
-                  className={`w-5 h-5 text-[#8B7D3A] transition-transform duration-300 flex-shrink-0 ml-4 ${
+                  className={`w-5 h-5 text-[#8B7D3A] transition-transform duration-300 shrink-0 ml-4 ${
                     openIndex === index ? "rotate-180" : ""
                   }`}
                 />

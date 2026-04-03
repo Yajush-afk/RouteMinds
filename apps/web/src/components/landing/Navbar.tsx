@@ -20,6 +20,7 @@ export default function Navbar() {
 </div>
 
       {/* Sign Up Button */}
+      <Link to='/signup'>
       <motion.button
       whileHover={{scale: 1.05, y: -1}}
       whileTap={{scale: 0.9, y: 1}}
@@ -28,6 +29,7 @@ export default function Navbar() {
       >
         Sign Up
       </motion.button>
+      </Link>
     </nav>
   )
 }
