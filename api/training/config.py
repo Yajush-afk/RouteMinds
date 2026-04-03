@@ -44,6 +44,7 @@ class FeatureConfig:
     categorical: list[str] = field(default_factory=list)
     numeric: list[str] = field(default_factory=list)
     drop: list[str] = field(default_factory=list)
+    feature_time_column: str | None = None
 
 
 @dataclass(slots=True)
@@ -95,9 +96,9 @@ def resolve_repo_path(value: str) -> Path:
 def load_training_config(config_path: str | Path) -> TrainingConfig:
     path = Path(config_path)
     if not path.is_absolute():
-        path = REPO_ROOT / "api" / path
-        if not path.exists():
-            path = REPO_ROOT / config_path
+        repo_relative_path = REPO_ROOT / path
+        api_relative_path = REPO_ROOT / "api" / path
+        path = repo_relative_path if repo_relative_path.exists() else api_relative_path
 
     with path.open("rb") as config_file:
         raw = tomllib.load(config_file)

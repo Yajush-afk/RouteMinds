@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from training.config import TrainingConfig, resolve_repo_path
+from api.training.config import TrainingConfig, resolve_repo_path
 
 
 def load_dataset(config: TrainingConfig) -> pd.DataFrame:
@@ -85,6 +85,7 @@ def derive_segment_dataset(
     frame["to_stop_id"] = frame[stop_column]
     frame["prev_scheduled_arrival_unix"] = grouped[scheduled_column].shift(1)
     frame["prev_gps_timestamp"] = grouped[actual_column].shift(1)
+    frame["segment_start_scheduled_unix"] = frame["prev_scheduled_arrival_unix"]
 
     frame["scheduled_segment_minutes"] = (
         frame[scheduled_column] - frame["prev_scheduled_arrival_unix"]
@@ -107,8 +108,7 @@ def derive_segment_dataset(
     )
 
     numeric_columns = [
-        "from_stop_id",
-        "to_stop_id",
+        "segment_start_scheduled_unix",
         "scheduled_segment_minutes",
         "actual_segment_minutes",
         "segment_delay_minutes",

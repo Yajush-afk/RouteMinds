@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.ml.model_loader import load_model
+from api.app.ml.model_loader import load_model
+from api.common.features import prepare_model_frame
 
 
 class SegmentTravelTimePredictor:
@@ -26,15 +27,13 @@ class SegmentTravelTimePredictor:
         if not schema:
             return dataframe
 
+        dataframe = prepare_model_frame(
+            dataframe,
+            categorical_columns=schema["categorical_features"],
+            numeric_columns=schema["numeric_features"],
+            feature_time_column=schema.get("feature_time_column"),
+        )
         feature_columns = schema["categorical_features"] + schema["numeric_features"]
-        missing_columns = [
-            column for column in feature_columns if column not in dataframe.columns
-        ]
-        if missing_columns:
-            missing = ", ".join(missing_columns)
-            raise ValueError(
-                f"Prediction payload is missing required segment feature columns: {missing}."
-            )
 
         return dataframe[feature_columns].copy()
 

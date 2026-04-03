@@ -29,6 +29,7 @@ The canonical baseline is segment-level:
 - source rows: stop events grouped by `trip_id`
 - derived target: `actual_segment_minutes`
 - secondary reporting target: `segment_delay_minutes`
+- feature time source: scheduled/query-time, not observed GPS event time
 - routing weight: predicted segment travel time
 
 The notebook also includes a small stop-level smoke run using `delay_minutes` to
@@ -50,22 +51,20 @@ Primary notebook workflow:
    - `training/notebooks/01_xgboost_baseline.ipynb`
 
 Use the `route_minds` kernel inside Jupyter. Starting the notebook server from
-`api/` is still preferred, but the notebook now bootstraps the `api/` root into
-`sys.path`, so `training.*` imports also work when launched from
+`api/` is still preferred, but the notebook now bootstraps the repo root into
+`sys.path`, so `api.*` imports also work when launched from
 `api/training/notebooks/`.
 
 Optional script entrypoint:
 
 ```bash
-cd api
-conda run -n route_minds python -m training.train_xgboost
+conda run -n route_minds python -m api.training.train_xgboost
 ```
 
 With a custom config:
 
 ```bash
-cd api
-conda run -n route_minds python -m training.train_xgboost --config training/config/default_config.toml
+conda run -n route_minds python -m api.training.train_xgboost --config api/training/config/default_config.toml
 ```
 
 ## Outputs

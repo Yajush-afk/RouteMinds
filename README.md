@@ -56,9 +56,10 @@ High-level training flow:
    - `scheduled_segment_minutes`
    - `actual_segment_minutes`
    - `segment_delay_minutes`
-4. Split train/validation/test by whole trips to reduce leakage
-5. Fit an XGBoost regression pipeline
-6. Save the trained model, schema, metrics, and config snapshot
+4. Derive temporal features from scheduled/query-time inputs, not realized GPS event time
+5. Split train/validation/test by whole trips to reduce leakage
+6. Fit an XGBoost regression pipeline
+7. Save the trained model, schema, metrics, and config snapshot
 
 ## Training
 
@@ -75,15 +76,14 @@ Open:
 
 - `training/notebooks/01_xgboost_baseline.ipynb`
 
-Run the notebook cells in order. The notebook bootstraps `api/` into
-`sys.path`, so `training.*` imports work even if Jupyter opens from the notebook
+Run the notebook cells in order. The notebook bootstraps repo root into
+`sys.path`, so `api.*` imports work even if Jupyter opens from the notebook
 directory.
 
 CLI workflow:
 
 ```bash
-cd api
-conda run -n route_minds python -m training.train_xgboost
+conda run -n route_minds python -m api.training.train_xgboost
 ```
 
 The active training config is:
@@ -116,6 +116,64 @@ Current backend state:
 - route optimization and prediction endpoints are still placeholders
 - inference-side model loading utilities exist, but end-to-end API integration
   is not complete yet
+
+Run the backend from the repo root with:
+
+```bash
+conda run -n route_minds uvicorn api.app.main:app --reload
+```
+
+Phase 1 prediction endpoint:
+
+```text
+POST /api/v1/predictions/segments
+```
+
+Required request fields per segment:
+
+- `route_id`
+- `from_stop_id`
+- `to_stop_id`
+- `stop_sequence`
+- `normalized_stop_position`
+- `distance_to_prev_stop_km`
+- `segment_start_scheduled_unix`
+- `scheduled_segment_minutes`
+- `prev_segment_delay`
+- `rolling_segment_delay_3`
+
+GTFS static files for backend graph construction live under:
+
+- `data/raw/stops.txt`
+- `data/raw/routes.txt`
+- `data/raw/trips.txt`
+- `data/raw/stop_times.txt`
+
+Phase 3 route optimization endpoint:
+
+```text
+POST /api/v1/routes/optimize
+```
+
+Required request fields:
+
+- `origin_stop_id`
+- `destination_stop_id`
+- `query_timestamp_unix`
+
+Phase 4 real-time operational endpoints:
+
+```text
+POST /api/v1/realtime/refresh
+GET /api/v1/realtime/status
+```
+
+Required real-time backend settings:
+
+- `GTFS_RT_VEHICLE_POSITIONS_URL`
+- `GTFS_RT_API_KEY`
+- `GTFS_RT_REFRESH_INTERVAL_SECONDS`
+- `GTFS_RT_SNAPSHOT_PATH` (optional)
 
 ## Next Recommended Step
 
