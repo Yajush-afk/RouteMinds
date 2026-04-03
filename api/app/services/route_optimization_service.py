@@ -22,6 +22,12 @@ class RouteOptimizationResult:
     total_predicted_eta_minutes: float
 
 
+@dataclass(frozen=True, slots=True)
+class RouteStep:
+    edge: SegmentEdge
+    edge_start_timestamp: int
+
+
 class RouteOptimizationService:
     def __init__(
         self,
@@ -92,11 +98,14 @@ class RouteOptimizationService:
         origin_stop_id: str,
         destination_stop_id: str,
         query_timestamp_unix: int,
-    ) -> tuple[dict[str, SegmentEdge], dict[SegmentEdge, dict[str, float]], dict[str, float]]:
+    ) -> tuple[
+        dict[str, RouteStep],
+        dict[tuple[SegmentEdge, int], dict[str, float]],
+        dict[str, float],
+    ]:
         distances: dict[str, float] = {origin_stop_id: 0.0}
-        previous_edge_by_stop: dict[str, SegmentEdge] = {}
-        edge_prediction_cache: dict[SegmentEdge, dict[str, float]] = {}
-        scored_stop_cache: set[str] = set()
+        previous_edge_by_stop: dict[str, RouteStep] = {}
+        edge_prediction_cache: dict[tuple[SegmentEdge, int], dict[str, float]] = {}
 
         heap: list[tuple[float, str]] = [(0.0, origin_stop_id)]
 
@@ -112,16 +121,16 @@ class RouteOptimizationService:
             if not outgoing_edges:
                 continue
 
-            if current_stop_id not in scored_stop_cache:
-                self._score_outgoing_edges(
-                    outgoing_edges,
-                    edge_prediction_cache,
-                    query_timestamp_unix,
-                )
-                scored_stop_cache.add(current_stop_id)
+            edge_start_timestamp = query_timestamp_unix + int(round(current_distance * 60.0))
+            self._score_outgoing_edges(
+                outgoing_edges,
+                edge_prediction_cache,
+                edge_start_timestamp,
+            )
 
             for edge in outgoing_edges:
-                prediction = edge_prediction_cache[edge]
+                prediction_cache_key = (edge, edge_start_timestamp)
+                prediction = edge_prediction_cache[prediction_cache_key]
                 edge_weight = max(
                     prediction["predicted_actual_segment_minutes"],
                     MIN_EDGE_WEIGHT_MINUTES,
@@ -129,7 +138,10 @@ class RouteOptimizationService:
                 candidate_distance = current_distance + edge_weight
                 if candidate_distance < distances.get(edge.to_stop_id, float("inf")):
                     distances[edge.to_stop_id] = candidate_distance
-                    previous_edge_by_stop[edge.to_stop_id] = edge
+                    previous_edge_by_stop[edge.to_stop_id] = RouteStep(
+                        edge=edge,
+                        edge_start_timestamp=edge_start_timestamp,
+                    )
                     heapq.heappush(heap, (candidate_distance, edge.to_stop_id))
 
         return previous_edge_by_stop, edge_prediction_cache, distances
@@ -137,25 +149,29 @@ class RouteOptimizationService:
     def _score_outgoing_edges(
         self,
         outgoing_edges: tuple[SegmentEdge, ...],
-        edge_prediction_cache: dict[SegmentEdge, dict[str, float]],
-        query_timestamp_unix: int,
+        edge_prediction_cache: dict[tuple[SegmentEdge, int], dict[str, float]],
+        edge_start_timestamp: int,
     ) -> None:
-        uncached_edges = [edge for edge in outgoing_edges if edge not in edge_prediction_cache]
+        uncached_edges = [
+            edge
+            for edge in outgoing_edges
+            if (edge, edge_start_timestamp) not in edge_prediction_cache
+        ]
         if not uncached_edges:
             return
 
         segment_records = [
-            self._build_segment_record(edge, query_timestamp_unix)
+            self._build_segment_record(edge, edge_start_timestamp)
             for edge in uncached_edges
         ]
         predictions = self.prediction_service.predict_segments(segment_records)
         for edge, prediction in zip(uncached_edges, predictions, strict=True):
-            edge_prediction_cache[edge] = prediction
+            edge_prediction_cache[(edge, edge_start_timestamp)] = prediction
 
     def _build_segment_record(
         self,
         edge: SegmentEdge,
-        query_timestamp_unix: int,
+        edge_start_timestamp: int,
     ) -> dict[str, str | int | float]:
         prev_segment_delay = 0.0
         rolling_segment_delay_3 = 0.0
@@ -164,7 +180,6 @@ class RouteOptimizationService:
                 edge.route_id,
                 edge.from_stop_id,
                 edge.to_stop_id,
-                reference_timestamp=query_timestamp_unix,
             )
             if live_context:
                 prev_segment_delay = live_context.prev_segment_delay
@@ -177,7 +192,7 @@ class RouteOptimizationService:
             "stop_sequence": edge.stop_sequence,
             "normalized_stop_position": edge.normalized_stop_position,
             "distance_to_prev_stop_km": edge.distance_to_prev_stop_km,
-            "segment_start_scheduled_unix": query_timestamp_unix,
+            "segment_start_scheduled_unix": edge_start_timestamp,
             "scheduled_segment_minutes": edge.scheduled_segment_minutes,
             "prev_segment_delay": prev_segment_delay,
             "rolling_segment_delay_3": rolling_segment_delay_3,
@@ -185,27 +200,27 @@ class RouteOptimizationService:
 
     def _reconstruct_edges(
         self,
-        previous_edge_by_stop: dict[str, SegmentEdge],
+        previous_edge_by_stop: dict[str, RouteStep],
         destination_stop_id: str,
-    ) -> list[SegmentEdge]:
-        route_edges: list[SegmentEdge] = []
+    ) -> list[RouteStep]:
+        route_steps: list[RouteStep] = []
         current_stop_id = destination_stop_id
 
         while current_stop_id in previous_edge_by_stop:
-            edge = previous_edge_by_stop[current_stop_id]
-            route_edges.append(edge)
-            current_stop_id = edge.from_stop_id
+            step = previous_edge_by_stop[current_stop_id]
+            route_steps.append(step)
+            current_stop_id = step.edge.from_stop_id
 
-        route_edges.reverse()
-        return route_edges
+        route_steps.reverse()
+        return route_steps
 
     def _build_stop_path(
         self,
         graph: StaticTransitGraph,
         origin_stop_id: str,
-        route_edges: list[SegmentEdge],
+        route_steps: list[RouteStep],
     ) -> list[dict[str, str | float]]:
-        stop_ids = [origin_stop_id] + [edge.to_stop_id for edge in route_edges]
+        stop_ids = [origin_stop_id] + [step.edge.to_stop_id for step in route_steps]
         stops = []
         for stop_id in stop_ids:
             stop = graph.stops_by_id[stop_id]
@@ -221,24 +236,28 @@ class RouteOptimizationService:
 
     def _build_segment_predictions(
         self,
-        route_edges: list[SegmentEdge],
-        edge_prediction_cache: dict[SegmentEdge, dict[str, float]],
+        route_steps: list[RouteStep],
+        edge_prediction_cache: dict[tuple[SegmentEdge, int], dict[str, float]],
     ) -> list[dict[str, str | int | float]]:
         return [
             {
-                "route_id": edge.route_id,
-                "from_stop_id": edge.from_stop_id,
-                "to_stop_id": edge.to_stop_id,
-                "stop_sequence": edge.stop_sequence,
-                "normalized_stop_position": edge.normalized_stop_position,
-                "distance_to_prev_stop_km": edge.distance_to_prev_stop_km,
-                "scheduled_segment_minutes": edge.scheduled_segment_minutes,
-                "predicted_actual_segment_minutes": edge_prediction_cache[edge][
+                "route_id": step.edge.route_id,
+                "from_stop_id": step.edge.from_stop_id,
+                "to_stop_id": step.edge.to_stop_id,
+                "stop_sequence": step.edge.stop_sequence,
+                "normalized_stop_position": step.edge.normalized_stop_position,
+                "distance_to_prev_stop_km": step.edge.distance_to_prev_stop_km,
+                "scheduled_segment_minutes": step.edge.scheduled_segment_minutes,
+                "predicted_actual_segment_minutes": edge_prediction_cache[
+                    (step.edge, step.edge_start_timestamp)
+                ][
                     "predicted_actual_segment_minutes"
                 ],
-                "predicted_segment_delay_minutes": edge_prediction_cache[edge][
+                "predicted_segment_delay_minutes": edge_prediction_cache[
+                    (step.edge, step.edge_start_timestamp)
+                ][
                     "predicted_segment_delay_minutes"
                 ],
             }
-            for edge in route_edges
+            for step in route_steps
         ]
