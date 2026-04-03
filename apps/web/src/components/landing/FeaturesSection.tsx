@@ -66,6 +66,17 @@ export default function FeaturesSection() {
   const [current, setCurrent] = useState(0)
   const [isInView, setIsInView] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    const updateIsMobile = () => setIsMobile(mediaQuery.matches)
+
+    updateIsMobile()
+    mediaQuery.addEventListener("change", updateIsMobile)
+
+    return () => mediaQuery.removeEventListener("change", updateIsMobile)
+  }, [])
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -98,14 +109,14 @@ export default function FeaturesSection() {
   }, [api])
 
   useEffect(() => {
-    if (!api || !isInView || shouldReduceMotion || isPaused) return
+    if (!api || !isInView || shouldReduceMotion || isPaused || isMobile) return
 
     const interval = window.setInterval(() => {
       api.scrollNext()
     }, 2500)
 
     return () => window.clearInterval(interval)
-  }, [api, isInView, shouldReduceMotion, isPaused])
+  }, [api, isInView, shouldReduceMotion, isPaused, isMobile])
 
   return (
     <section

@@ -1,9 +1,22 @@
 import { Link } from "react-router-dom"
 import { motion } from "motion/react"
+import { useEffect, useState } from "react"
 
 import { Button } from "@workspace/ui/components/button"
 
 export default function HeroSection() {
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    const updateIsMobile = () => setIsMobile(mediaQuery.matches)
+
+    updateIsMobile()
+    mediaQuery.addEventListener("change", updateIsMobile)
+
+    return () => mediaQuery.removeEventListener("change", updateIsMobile)
+  }, [])
+
   return (
     <section
       id="about"
@@ -16,17 +29,23 @@ export default function HeroSection() {
           <div>
             <motion.h1
               className="landing-heading text-4xl leading-tight text-foreground sm:text-5xl md:text-6xl"
-              initial={{ opacity: 0, x: -40 }}
+              initial={{ opacity: 0, x: isMobile ? -16 : -40 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, ease: "easeInOut" }}
+              transition={{
+                duration: isMobile ? 0.55 : 0.8,
+                ease: "easeInOut",
+              }}
             >
               Stop Waiting.
             </motion.h1>
             <motion.h1
               className="landing-heading text-4xl leading-tight text-primary sm:text-5xl md:text-6xl"
-              initial={{ opacity: 0, x: -40 }}
+              initial={{ opacity: 0, x: isMobile ? -16 : -40 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, ease: "easeInOut" }}
+              transition={{
+                duration: isMobile ? 0.55 : 0.8,
+                ease: "easeInOut",
+              }}
             >
               Start Predicting.
             </motion.h1>
