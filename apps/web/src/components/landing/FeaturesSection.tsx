@@ -1,168 +1,208 @@
-import { Brain, Route, Clock, MapPin, TrendingUp, Shield, ChevronLeft, ChevronRight } from "lucide-react"
-import { useState, useEffect, useRef } from "react"
-import { AnimatePresence, motion } from "motion/react"
+import {
+  Brain,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  MapPin,
+  Route,
+  Shield,
+  TrendingUp,
+} from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { useReducedMotion } from "motion/react"
+
+import { Button } from "@workspace/ui/components/button"
+import {
+  Carousel,
+  type CarouselApi,
+  CarouselContent,
+  CarouselItem,
+} from "@workspace/ui/components/carousel"
+import { cn } from "@workspace/ui/lib/utils"
 
 const features = [
   {
-    icon: <Clock className="w-6 h-6 text-[#8B7D3A]" />,
+    icon: <Clock className="h-6 w-6 text-primary" />,
     title: "Delay Prediction",
-    description: "Estimate tomorrow's delays using historical traffic data and seasonal patterns unique to Delhi's road network.",
+    description:
+      "Estimate tomorrow's delays using historical traffic data and seasonal patterns unique to Delhi's road network.",
   },
   {
-    icon: <TrendingUp className="w-6 h-6 text-[#8B7D3A]" />,
+    icon: <TrendingUp className="h-6 w-6 text-primary" />,
     title: "Real-Time Traffic Analysis",
-    description: "Continuously monitors live road conditions and adjusts route predictions instantly across Delhi's road network.",
-
+    description:
+      "Continuously monitors live road conditions and adjusts route predictions instantly across Delhi's road network.",
   },
   {
-    icon: <MapPin className="w-6 h-6 text-[#8B7D3A]" />,
+    icon: <MapPin className="h-6 w-6 text-primary" />,
     title: "Road Parameter Monitoring",
-    description: "Tracks road closures, construction zones, VIP movements and weather impact on routes in real time.",
+    description:
+      "Tracks road closures, construction zones, VIP movements and weather impact on routes in real time.",
   },
   {
-    icon: <Route className="w-6 h-6 text-[#8B7D3A]" />,
+    icon: <Route className="h-6 w-6 text-primary" />,
     title: "Multi-Route Rationalization",
-    description: "Balances traffic load across multiple routes to reduce city-wide congestion and ensure optimal distribution.",
+    description:
+      "Balances traffic load across multiple routes to reduce city-wide congestion and ensure optimal distribution.",
   },
   {
-    icon: <Brain className="w-6 h-6 text-[#8B7D3A]" />,
+    icon: <Brain className="h-6 w-6 text-primary" />,
     title: "Smart Suggestions",
-    description: "Get the best route based on predicted congestion, real-time variables and your travel history.",
-
+    description:
+      "Get the best route based on predicted congestion, real-time variables and your travel history.",
   },
   {
-    icon: <Shield className="w-6 h-6 text-[#8B7D3A]" />,
+    icon: <Shield className="h-6 w-6 text-primary" />,
     title: "Historical Pattern Learning",
-    description: "ML model continuously learns from past traffic data to improve future predictions with every passing day.",
+    description:
+      "ML model continuously learns from past traffic data to improve future predictions with every passing day.",
   },
 ]
 
 export default function FeaturesSection() {
-  const [current, setCurrent] = useState(0)
-  const [direction, setDirection] = useState(1)
-  const [isInView, setIsInView] = useState(false)
   const sectionRef = useRef<HTMLElement>(null)
+  const shouldReduceMotion = useReducedMotion()
+  const [api, setApi] = useState<CarouselApi>()
+  const [current, setCurrent] = useState(0)
+  const [isInView, setIsInView] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => setIsInView(entry.isIntersecting),
       { threshold: 0.3 }
     )
-    if (sectionRef.current) observer.observe(sectionRef.current)
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current)
+    }
+
     return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    if (!isInView) return
-    const interval = setInterval(() => {
-      setDirection(1)
-      setCurrent((prev) => (prev + 1) % features.length)
+    if (!api) return
+
+    const updateCurrent = () => {
+      setCurrent(api.selectedScrollSnap())
+    }
+
+    updateCurrent()
+    api.on("select", updateCurrent)
+    api.on("reInit", updateCurrent)
+
+    return () => {
+      api.off("select", updateCurrent)
+      api.off("reInit", updateCurrent)
+    }
+  }, [api])
+
+  useEffect(() => {
+    if (!api || !isInView || shouldReduceMotion || isPaused) return
+
+    const interval = window.setInterval(() => {
+      api.scrollNext()
     }, 2500)
-    return () => clearInterval(interval)
-  }, [isInView])
 
-  function goNext() {
-    setDirection(1)
-    setCurrent((prev) => (prev + 1) % features.length)
-  }
-
-  function goPrev() {
-    setDirection(-1)
-    setCurrent((prev) => (prev - 1 + features.length) % features.length)
-  }
-
-  const feature = features[current]
+    return () => window.clearInterval(interval)
+  }, [api, isInView, shouldReduceMotion, isPaused])
 
   return (
     <section
       id="features"
       ref={sectionRef}
-      style={{ fontFamily: "'Syne', sans-serif" }}
-      className="bg-white px-8 md:px-16 lg:px-24 py-20"
+      className="bg-secondary px-8 py-20 md:px-16 lg:px-24"
     >
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <p className="text-xs tracking-widest uppercase text-[#8B7D3A] font-semibold mb-3">
+      <div className="mx-auto max-w-7xl">
+        <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
           What We Offer
         </p>
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-3 gap-4">
-          <h2 className="text-4xl md:text-5xl font-bold text-[#1a1a1a] leading-tight max-w-lg">
-            Travel Smarter,<br /> Not Harder.
+        <div className="mb-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <h2 className="landing-heading max-w-lg text-4xl leading-tight text-foreground md:text-5xl">
+            Travel Smarter,
+            <br /> Not Harder.
           </h2>
         </div>
-        <p className="text-[#555] max-w-sm text-base leading-relaxed mb-12">
-            Our ML engine processes thousands of real-time data points to keep Delhi moving efficiently.
-          </p>
+        <p className="mb-12 max-w-sm text-base leading-relaxed text-muted-foreground">
+          Our ML engine processes thousands of real-time data points to keep
+          Delhi moving efficiently.
+        </p>
 
-        {/* Carousel */}
         <div className="flex items-center gap-4">
-
-          {/* Prev Button */}
-          <button
-            onClick={goPrev}
-            className="w-10 h-10 rounded-full border border-gray-200 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors flex-shrink-0"
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-lg"
+            onClick={() => api?.scrollPrev()}
+            className="shrink-0 rounded-xl border-border bg-background text-muted-foreground shadow-none hover:border-primary hover:bg-background hover:text-primary"
+            aria-label="Previous feature"
           >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+            <ChevronLeft />
+          </Button>
 
-          {/* Card */}
-          <div className="flex-1 overflow-hidden">
-            <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={current}
-                custom={direction}
-                initial={{ opacity: 0, x: direction * 60 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: direction * -60 }}
-                transition={{ type: "spring", visualDuration: 0.4, bounce: 0.2 }}
-                className="bg-[#F5F5F0] rounded-2xl p-8 min-h-[200px] flex flex-col justify-between border border-gray-100"
-              >
-                {/* Top row */}
-                <div className="flex items-start justify-between">
-                  <div className="bg-white w-11 h-11 rounded-xl flex items-center justify-center shadow-sm">
-                    {feature.icon}
+          <Carousel
+            setApi={setApi}
+            opts={{ align: "start", loop: true }}
+            className="flex-1"
+          >
+            <CarouselContent>
+              {features.map((feature) => (
+                <CarouselItem key={feature.title}>
+                  <div
+                    className="flex min-h-[200px] flex-col justify-between rounded-2xl border border-border bg-background p-8"
+                    onMouseEnter={() => setIsPaused(true)}
+                    onMouseLeave={() => setIsPaused(false)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary shadow-sm">
+                        {feature.icon}
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <h3 className="landing-heading mb-2 text-xl text-foreground">
+                        {feature.title}
+                      </h3>
+                      <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+                        {feature.description}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </Carousel>
 
-                {/* Bottom row */}
-                <div className="mt-6">
-                  <h3 className="text-xl font-bold text-[#1a1a1a] mb-2">
-                    {feature.title}
-                  </h3>
-                  <p className="text-[#555] text-sm leading-relaxed max-w-xl">
-                    {feature.description}
-                  </p>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-
-          {/* Next Button */}
-          <button
-            onClick={goNext}
-            className="size-10 rounded-full border border-gray-500 flex items-center justify-center hover:border-[#8B7D3A] hover:text-[#8B7D3A] transition-colors flex-shrink-0"
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-lg"
+            onClick={() => api?.scrollNext()}
+            className="shrink-0 rounded-xl border-border bg-background text-muted-foreground shadow-none hover:border-primary hover:bg-background hover:text-primary"
+            aria-label="Next feature"
           >
-            <ChevronRight className="w-4 h-4" color="#00000050"/>
-          </button>
-
+            <ChevronRight />
+          </Button>
         </div>
 
-        {/* Dots */}
-        <div className="flex justify-center gap-2 mt-6">
-          {features.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => {
-                setDirection(i > current ? 1 : -1)
-                setCurrent(i)
-              }}
-              className={`h-2 rounded-full transition-all duration-300 ${
-                i === current ? "bg-[#8B7D3A] w-6" : "bg-gray-300 w-2"
-              }`}
+        <div className="mt-6 flex justify-center gap-2">
+          {features.map((feature, index) => (
+            <Button
+              key={feature.title}
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => api?.scrollTo(index)}
+              aria-label={`Go to ${feature.title}`}
+              className={cn(
+                "h-2 min-w-0 rounded-xl px-0 transition-all duration-300 hover:bg-primary/20",
+                current === index
+                  ? "w-6 bg-primary hover:bg-primary/90"
+                  : "w-2 bg-border"
+              )}
             />
           ))}
         </div>
-
       </div>
     </section>
   )

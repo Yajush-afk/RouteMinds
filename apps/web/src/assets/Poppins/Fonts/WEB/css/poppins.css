@@ -1,0 +1,22 @@
+/**
+* @license
+*
+* Font Family: Poppins
+* Designed by: Jonny Pinhorn, Indian Type Foundry
+* URL: https://www.fontshare.com/fonts/poppins
+* © 2026 Indian Type Foundry
+*
+* Poppins SemiBold 
+
+*
+*/
+@font-face {
+  font-family: 'Poppins-SemiBold';
+  src: url('../fonts/Poppins-SemiBold.woff2') format('woff2'),
+       url('../fonts/Poppins-SemiBold.woff') format('woff'),
+       url('../fonts/Poppins-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+  font-style: normal;
+}
+
