@@ -11,7 +11,6 @@ import httpx
 from google.transit import gtfs_realtime_pb2
 
 from api.app.api.v1.realtime import refresh_realtime, realtime_status
-from api.app.core.auth import require_auth
 from api.app.core.config import settings
 from api.app.core.exceptions import GTFSRealtimeException
 from api.app.main import app
@@ -420,7 +419,11 @@ class RealtimeEnrichmentTests(unittest.TestCase):
             realtime_enrichment_service=realtime_service,
         )
 
-        route_service.optimize_route("STOP_B", "STOP_C", trip_1_stop_c_arrival + 200)
+        with patch(
+            "api.app.services.realtime_enrichment_service.time.time",
+            return_value=trip_1_stop_c_arrival + 200,
+        ):
+            route_service.optimize_route("STOP_B", "STOP_C", trip_1_stop_c_arrival + 200)
 
         self.assertGreaterEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
         self.assertGreater(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
