@@ -203,14 +203,14 @@
 }
 
 @layer base {
-  html {
+  html:has(.landing-theme),
+  body:has(.landing-theme) {
     background-color: var(--landing-background);
   }
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply text-foreground;
-    background-color: var(--landing-background);
+    @apply bg-background text-foreground;
   }
 }
