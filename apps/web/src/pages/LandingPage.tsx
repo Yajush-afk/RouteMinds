@@ -6,7 +6,6 @@ import WhyDelhi from "@/components/landing/WhyDelhi"
 import FAQSection from "@/components/landing/FAQSection"
 import Footer from "@/components/landing/Footer"
 
-
 // function LandingPage() {
 //   return (
 //     <main className="grid min-h-screen place-items-center bg-background px-6 text-center">
@@ -22,9 +21,9 @@ import Footer from "@/components/landing/Footer"
 //   )
 // }
 
-export default function LandingPage(){
+export default function LandingPage() {
   return (
-    <main>
+    <main className="landing-theme bg-background text-foreground">
       <Navbar />
       <HeroSection />
       <FeaturesSection />
