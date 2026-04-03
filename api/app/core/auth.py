@@ -3,10 +3,16 @@ from __future__ import annotations
 from functools import lru_cache
 
 import jwt
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, Request
 from jwt import InvalidTokenError, PyJWKClient
+from jwt.exceptions import PyJWKClientError
 
 from api.app.core.config import settings
+from api.app.core.exceptions import (
+    AuthConfigurationException,
+    AuthenticationException,
+    AuthorizationException,
+)
 
 def normalize_auth0_domain(domain: str) -> str:
     value = domain.strip()
@@ -31,15 +37,9 @@ class Auth0JWTVerifier:
     ):
         normalized_domain = normalize_auth0_domain(domain)
         if not normalized_domain:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AUTH0_DOMAIN is not configured.",
-            )
+            raise AuthConfigurationException("AUTH0_DOMAIN is not configured.")
         if not audience:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="AUTH0_AUDIENCE is not configured.",
-            )
+            raise AuthConfigurationException("AUTH0_AUDIENCE is not configured.")
 
         self.domain = normalized_domain
         self.audience = audience
@@ -50,6 +50,18 @@ class Auth0JWTVerifier:
     def verify_token(self, token: str) -> dict:
         try:
             signing_key = get_jwks_client(self.jwks_url).get_signing_key_from_jwt(token)
+        except PyJWKClientError as exc:
+            raise AuthConfigurationException(
+                "Unable to retrieve Auth0 signing keys."
+            ) from exc
+        except InvalidTokenError as exc:
+            raise AuthenticationException("Invalid or expired Auth0 access token.") from exc
+        except Exception as exc:
+            raise AuthConfigurationException(
+                "Auth0 token verification service is unavailable."
+            ) from exc
+
+        try:
             return jwt.decode(
                 token,
                 signing_key.key,
@@ -58,16 +70,10 @@ class Auth0JWTVerifier:
                 issuer=self.issuer,
             )
         except InvalidTokenError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired Auth0 access token.",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from exc
+            raise AuthenticationException("Invalid or expired Auth0 access token.") from exc
         except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unable to validate Auth0 access token.",
-                headers={"WWW-Authenticate": "Bearer"},
+            raise AuthConfigurationException(
+                "Auth0 token verification service is unavailable."
             ) from exc
 
 @lru_cache(maxsize=1)
@@ -94,11 +100,41 @@ async def require_auth(
     authorization = request.headers.get("Authorization", "").strip()
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication credentials were not provided.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthenticationException()
 
     verifier = get_auth0_verifier()
     return verifier.verify_token(token.strip())
+
+def extract_token_permissions(claims: dict) -> set[str]:
+    permissions: set[str] = set()
+
+    raw_permissions = claims.get("permissions")
+    if isinstance(raw_permissions, list):
+        permissions.update(str(value).strip() for value in raw_permissions if str(value).strip())
+
+    raw_scope = claims.get("scope")
+    if isinstance(raw_scope, str):
+        permissions.update(value.strip() for value in raw_scope.split() if value.strip())
+
+    return permissions
+
+
+async def require_realtime_access(
+    claims: dict = Depends(require_auth),
+) -> dict:
+    if not settings.AUTH0_ENABLED:
+        return claims
+
+    required_permission = settings.AUTH0_REALTIME_REQUIRED_PERMISSION.strip()
+    if not required_permission:
+        raise AuthConfigurationException(
+            "AUTH0_REALTIME_REQUIRED_PERMISSION is not configured."
+        )
+
+    permissions = extract_token_permissions(claims)
+    if required_permission not in permissions:
+        raise AuthorizationException(
+            "You do not have permission to access realtime operational endpoints."
+        )
+
+    return claims
