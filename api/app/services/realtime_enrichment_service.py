@@ -5,8 +5,9 @@ import json
 import math
 import time
 from collections import defaultdict, deque
+from dataclasses import asdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -14,6 +15,8 @@ import httpx
 from api.app.core.config import REPO_ROOT, settings
 from api.app.core.exceptions import GTFSRealtimeException, GTFSStaticDataException
 from api.app.services.gtfs_graph_service import resolve_gtfs_path
+
+DELHI_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +56,15 @@ class SegmentLiveContext:
     trip_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class SegmentObservation:
+    route_id: str
+    from_stop_id: str
+    to_stop_id: str
+    delay_minutes: float
+    observation_timestamp: int
+
+
 def resolve_rt_path(value: str | Path) -> Path:
     path = Path(value)
     if path.is_absolute():
@@ -66,7 +78,7 @@ def parse_gtfs_time_to_seconds(value: str) -> int:
 
 
 def parse_service_date(value: str) -> datetime:
-    return datetime.strptime(value, "%Y%m%d").replace(tzinfo=timezone.utc)
+    return datetime.strptime(value, "%Y%m%d").replace(tzinfo=DELHI_TIMEZONE)
 
 
 def scheduled_unix_from_service_date(start_date: str, seconds_from_midnight: int) -> int:
@@ -221,7 +233,7 @@ class GTFSRealtimeIngestionService:
 
     def _persist_snapshots(self, snapshots: list[VehiclePositionSnapshot]) -> None:
         self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = [snapshot.__dict__ for snapshot in snapshots]
+        payload = [asdict(snapshot) for snapshot in snapshots]
         self.snapshot_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
@@ -235,10 +247,11 @@ class RealtimeEnrichmentService:
         self.ingestion_service = ingestion_service
         self.trip_stop_events = load_trip_stop_events(gtfs_static_dir)
         self.segment_live_context: dict[tuple[str, str, str], SegmentLiveContext] = {}
-        self.vehicle_segment_history: dict[str, deque[float]] = defaultdict(
+        self.segment_delay_history: dict[tuple[str, str], deque[float]] = defaultdict(
             lambda: deque(maxlen=3)
         )
         self.latest_vehicle_snapshot: dict[str, VehiclePositionSnapshot] = {}
+        self.latest_vehicle_observation: dict[str, SegmentObservation] = {}
         self.last_refresh_time: int | None = None
         self.latest_snapshot_time: int | None = None
 
@@ -291,33 +304,29 @@ class RealtimeEnrichmentService:
         if not trip_events or len(trip_events) < 2:
             return False
 
-        segment_events = self._infer_segment_events(snapshot, trip_events)
-        if segment_events is None:
+        segment_observation = self._infer_segment_observation(snapshot, trip_events)
+        if segment_observation is None:
             return False
 
-        from_event, to_event = segment_events
-        scheduled_arrival_unix = scheduled_unix_from_service_date(
-            snapshot.start_date,
-            to_event.arrival_seconds,
+        key = (
+            segment_observation.route_id,
+            segment_observation.from_stop_id,
+            segment_observation.to_stop_id,
         )
-        current_delay_minutes = (
-            snapshot.gps_timestamp - scheduled_arrival_unix
-        ) / 60.0
-
-        history = self.vehicle_segment_history[snapshot.vehicle_id]
-        previous_delay = history[-1] if history else 0.0
-        history.append(current_delay_minutes)
-        rolling_delay = sum(history) / len(history)
-
-        key = (snapshot.route_id, from_event.stop_id, to_event.stop_id)
         current_context = self.segment_live_context.get(key)
         if current_context and current_context.last_update_timestamp > snapshot.snapshot_time:
             return False
 
+        trip_segment_key = (snapshot.trip_id, segment_observation.to_stop_id)
+        history = self.segment_delay_history[trip_segment_key]
+        previous_delay = history[-1] if history else 0.0
+        history.append(segment_observation.delay_minutes)
+        rolling_delay = sum(history) / len(history)
+
         self.segment_live_context[key] = SegmentLiveContext(
-            route_id=snapshot.route_id,
-            from_stop_id=from_event.stop_id,
-            to_stop_id=to_event.stop_id,
+            route_id=segment_observation.route_id,
+            from_stop_id=segment_observation.from_stop_id,
+            to_stop_id=segment_observation.to_stop_id,
             prev_segment_delay=previous_delay,
             rolling_segment_delay_3=rolling_delay,
             last_update_timestamp=snapshot.snapshot_time,
@@ -325,31 +334,89 @@ class RealtimeEnrichmentService:
             trip_id=snapshot.trip_id,
         )
         self.latest_vehicle_snapshot[snapshot.vehicle_id] = snapshot
+        self.latest_vehicle_observation[snapshot.vehicle_id] = segment_observation
         return True
 
-    def _infer_segment_events(
+    def _infer_segment_observation(
         self,
         snapshot: VehiclePositionSnapshot,
         trip_events: tuple[TripStopEvent, ...],
-    ) -> tuple[TripStopEvent, TripStopEvent] | None:
-        nearest_index = None
-        nearest_distance = None
-        for index, event in enumerate(trip_events):
-            distance = haversine_km(
+    ) -> SegmentObservation | None:
+        best_candidate = None
+        best_candidate_score = None
+        previous_snapshot = self.latest_vehicle_snapshot.get(snapshot.vehicle_id)
+        previous_observation = self.latest_vehicle_observation.get(snapshot.vehicle_id)
+
+        for from_event, to_event in zip(trip_events, trip_events[1:]):
+            midpoint_lat = (from_event.stop_lat + to_event.stop_lat) / 2.0
+            midpoint_lon = (from_event.stop_lon + to_event.stop_lon) / 2.0
+            midpoint_distance = haversine_km(
                 snapshot.latitude,
                 snapshot.longitude,
-                event.stop_lat,
-                event.stop_lon,
+                midpoint_lat,
+                midpoint_lon,
             )
-            if nearest_distance is None or distance < nearest_distance:
-                nearest_distance = distance
-                nearest_index = index
 
-        if nearest_index is None:
-            return None
-        if nearest_index == 0:
-            return trip_events[0], trip_events[1]
-        return trip_events[nearest_index - 1], trip_events[nearest_index]
+            scheduled_midpoint_unix = scheduled_unix_from_service_date(
+                snapshot.start_date,
+                from_event.departure_seconds
+                + max(0, to_event.arrival_seconds - from_event.departure_seconds) // 2,
+            )
+            time_alignment_penalty = abs(
+                snapshot.gps_timestamp - scheduled_midpoint_unix
+            ) / 60.0
+
+            progression_penalty = 0.0
+            if previous_snapshot and previous_observation:
+                if to_event.stop_sequence < self._to_stop_sequence(
+                    previous_observation,
+                    trip_events,
+                ):
+                    progression_penalty += 1_000.0
+                previous_distance_to_to_stop = haversine_km(
+                    previous_snapshot.latitude,
+                    previous_snapshot.longitude,
+                    to_event.stop_lat,
+                    to_event.stop_lon,
+                )
+                current_distance_to_to_stop = haversine_km(
+                    snapshot.latitude,
+                    snapshot.longitude,
+                    to_event.stop_lat,
+                    to_event.stop_lon,
+                )
+                if current_distance_to_to_stop > previous_distance_to_to_stop + 0.05:
+                    progression_penalty += 5.0
+
+            candidate_score = midpoint_distance + time_alignment_penalty + progression_penalty
+            if best_candidate_score is None or candidate_score < best_candidate_score:
+                scheduled_arrival_unix = scheduled_unix_from_service_date(
+                    snapshot.start_date,
+                    to_event.arrival_seconds,
+                )
+                best_candidate = SegmentObservation(
+                    route_id=snapshot.route_id,
+                    from_stop_id=from_event.stop_id,
+                    to_stop_id=to_event.stop_id,
+                    delay_minutes=(
+                        snapshot.gps_timestamp - scheduled_arrival_unix
+                    )
+                    / 60.0,
+                    observation_timestamp=snapshot.snapshot_time,
+                )
+                best_candidate_score = candidate_score
+
+        return best_candidate
+
+    def _to_stop_sequence(
+        self,
+        observation: SegmentObservation,
+        trip_events: tuple[TripStopEvent, ...],
+    ) -> int:
+        for event in trip_events:
+            if event.stop_id == observation.to_stop_id:
+                return event.stop_sequence
+        return None
 
 
 _realtime_enrichment_service: RealtimeEnrichmentService | None = None

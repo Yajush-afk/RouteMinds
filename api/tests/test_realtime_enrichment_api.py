@@ -4,6 +4,7 @@ import csv
 import tempfile
 import unittest
 from pathlib import Path
+import json
 from unittest.mock import patch
 
 import httpx
@@ -84,15 +85,18 @@ class StaticPredictionService:
 
 
 class StaticGraphService:
-    def __init__(self):
-        edge = SegmentEdge("R1", "STOP_A", "STOP_B", 1, 0.5, 1.0, 4.0)
+    def __init__(self, edge: SegmentEdge | None = None):
+        edge = edge or SegmentEdge("R1", "STOP_A", "STOP_B", 1, 0.5, 1.0, 4.0)
+        from_stop = edge.from_stop_id
+        to_stop = edge.to_stop_id
         self.graph = StaticTransitGraph(
             stops_by_id={
                 "STOP_A": StopNode("STOP_A", "Stop A", 28.70, 77.10),
                 "STOP_B": StopNode("STOP_B", "Stop B", 28.71, 77.11),
+                "STOP_C": StopNode("STOP_C", "Stop C", 28.72, 77.12),
             },
             edges=(edge,),
-            edges_from_stop={"STOP_A": (edge,)},
+            edges_from_stop={from_stop: (edge,)},
         )
 
     def get_graph(self) -> StaticTransitGraph:
@@ -189,6 +193,7 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(context.from_stop_id, "STOP_B")
         self.assertEqual(context.to_stop_id, "STOP_C")
         self.assertGreaterEqual(context.rolling_segment_delay_3, context.prev_segment_delay)
+        self.assertGreater(context.prev_segment_delay, 0.0)
 
     def test_routing_uses_live_delay_context_when_available(self) -> None:
         snapshots = [
@@ -198,12 +203,12 @@ class RealtimeEnrichmentTests(unittest.TestCase):
                 route_id="R1",
                 start_time="08:00:00",
                 start_date="20250401",
-                latitude=28.709,
-                longitude=77.109,
+                latitude=28.705,
+                longitude=77.105,
                 speed_mps=5.5,
-                gps_timestamp=1743494820,
-                snapshot_time=1743494825,
-            )
+                gps_timestamp=1743494700,
+                snapshot_time=1743494705,
+            ),
         ]
         realtime_service = RealtimeEnrichmentService(
             gtfs_static_dir=self.gtfs_dir,
@@ -213,18 +218,17 @@ class RealtimeEnrichmentTests(unittest.TestCase):
 
         prediction_service = StaticPredictionService()
         route_service = RouteOptimizationService(
-            graph_service=StaticGraphService(),
+            graph_service=StaticGraphService(
+                SegmentEdge("R1", "STOP_B", "STOP_C", 2, 1.0, 1.0, 5.0)
+            ),
             prediction_service=prediction_service,
             realtime_enrichment_service=realtime_service,
         )
 
-        route_service.optimize_route("STOP_A", "STOP_B", 1743494700)
+        route_service.optimize_route("STOP_B", "STOP_C", 1743494700)
 
         self.assertEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
-        self.assertGreaterEqual(
-            prediction_service.last_records[0]["rolling_segment_delay_3"],
-            0.0,
-        )
+        self.assertGreater(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
 
     def test_routing_falls_back_to_zero_without_live_context(self) -> None:
         realtime_service = RealtimeEnrichmentService(
@@ -242,6 +246,34 @@ class RealtimeEnrichmentTests(unittest.TestCase):
 
         self.assertEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
         self.assertEqual(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
+
+    def test_snapshot_persistence_writes_json_file(self) -> None:
+        snapshot_path = self.gtfs_dir / "snapshots.json"
+        service = GTFSRealtimeIngestionService(
+            vehicle_positions_url="https://example.com/vehicles",
+            api_key="secret",
+            snapshot_path=snapshot_path,
+        )
+        snapshots = [
+            VehiclePositionSnapshot(
+                vehicle_id="V1",
+                trip_id="TRIP_1",
+                route_id="R1",
+                start_time="08:00:00",
+                start_date="20250401",
+                latitude=28.709,
+                longitude=77.109,
+                speed_mps=5.5,
+                gps_timestamp=1743494820,
+                snapshot_time=1743494825,
+            )
+        ]
+
+        service._persist_snapshots(snapshots)
+
+        self.assertTrue(snapshot_path.exists())
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload[0]["vehicle_id"], "V1")
 
 
 class StubRealtimeApiService:
