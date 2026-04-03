@@ -10,6 +10,9 @@ from unittest.mock import patch
 import httpx
 from google.transit import gtfs_realtime_pb2
 
+from api.app.api.v1.realtime import refresh_realtime, realtime_status
+from api.app.core.auth import require_auth
+from api.app.core.config import settings
 from api.app.core.exceptions import GTFSRealtimeException
 from api.app.main import app
 from api.app.services.gtfs_graph_service import SegmentEdge, StaticTransitGraph, StopNode
@@ -527,6 +530,15 @@ class StubRealtimeApiService:
 
 
 class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.original_auth0_enabled = settings.AUTH0_ENABLED
+        settings.AUTH0_ENABLED = True
+        app.dependency_overrides.clear()
+
+    def tearDown(self) -> None:
+        settings.AUTH0_ENABLED = self.original_auth0_enabled
+        app.dependency_overrides.clear()
+
     async def _request(self, method: str, path: str) -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -540,27 +552,30 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await self._request("POST", "/api/v1/realtime/refresh")
+            response = await refresh_realtime(_claims={"sub": "auth0|demo-user"})
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["fetched_snapshots"], 3)
-        self.assertEqual(payload["enriched_segments"], 2)
-        self.assertEqual(payload["provider_format"], "protobuf")
+        self.assertEqual(response.fetched_snapshots, 3)
+        self.assertEqual(response.enriched_segments, 2)
+        self.assertEqual(response.provider_format, "protobuf")
 
     async def test_status_endpoint_returns_cache_state(self) -> None:
         with patch(
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await self._request("GET", "/api/v1/realtime/status")
+            response = await realtime_status(_claims={"sub": "auth0|demo-user"})
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["configured"])
-        self.assertEqual(payload["cached_segments"], 2)
-        self.assertTrue(payload["cache_is_fresh"])
-        self.assertEqual(payload["auth_mode"], "query")
+        self.assertTrue(response.configured)
+        self.assertEqual(response.cached_segments, 2)
+        self.assertTrue(response.cache_is_fresh)
+        self.assertEqual(response.auth_mode, "query")
+
+    async def test_realtime_endpoints_require_bearer_token(self) -> None:
+        refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+        status_response = await self._request("GET", "/api/v1/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertEqual(status_response.status_code, 401)
 
 
 if __name__ == "__main__":

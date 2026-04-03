@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from api.app.core.config import settings
+from api.app.core.auth import require_auth
 from api.app.schemas.routes import (
     RouteOptimizationRequest,
     RouteOptimizationResponse,
@@ -10,7 +11,10 @@ from api.app.services.prediction_service import PredictionService
 from api.app.services.realtime_enrichment_service import get_realtime_enrichment_service
 from api.app.services.route_optimization_service import RouteOptimizationService
 
-router = APIRouter(prefix="/routes", tags=["Routes"])
+router = APIRouter(
+    prefix="/routes",
+    tags=["Routes"],
+)
 
 
 def get_route_optimization_service() -> RouteOptimizationService:
@@ -29,6 +33,7 @@ def get_route_optimization_service() -> RouteOptimizationService:
 @router.post("/optimize", response_model=RouteOptimizationResponse)
 async def optimize_route(
     request: RouteOptimizationRequest,
+    _claims: dict = Depends(require_auth),
 ) -> RouteOptimizationResponse:
     route_service = get_route_optimization_service()
     result = route_service.optimize_route(
