@@ -43,9 +43,9 @@ export default function WhyDelhiSection() {
   return (
     <section
       id="why-delhi"
-      className="bg-background px-8 py-24 md:px-16 lg:px-24"
+      className="bg-background px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
-      <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 md:grid-cols-2">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 sm:gap-12 md:grid-cols-2 md:gap-16">
         {/* Left - Image */}
         <div className="relative overflow-hidden rounded-2xl shadow-lg">
           <img
@@ -53,30 +53,32 @@ export default function WhyDelhiSection() {
             alt="Delhi Traffic"
             loading="lazy"
             decoding="async"
-            className="h-[350px] w-full object-cover transition-transform duration-500 hover:scale-110"
+            className="h-64 w-full object-cover transition-transform duration-500 sm:h-80 md:h-[350px] md:hover:scale-110"
           />
-          <div className="absolute bottom-6 left-6 rounded-xl bg-background/90 px-4 py-3 shadow-md backdrop-blur-sm">
+          <div className="absolute bottom-4 left-4 rounded-xl bg-background/90 px-3 py-2 shadow-md backdrop-blur-sm sm:bottom-6 sm:left-6 sm:px-4 sm:py-3">
             <p className="text-xs tracking-widest text-muted-foreground uppercase">
               Daily Commuters
             </p>
-            <p className="landing-heading text-2xl text-foreground">14M+</p>
+            <p className="landing-heading text-xl text-foreground sm:text-2xl">
+              14M+
+            </p>
           </div>
         </div>
 
         {/* Right - Content */}
-        <div className="space-y-10">
+        <div className="space-y-8 sm:space-y-10">
           <div>
             <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
               Why Delhi?
             </p>
-            <h2 className="landing-heading text-4xl leading-tight text-foreground md:text-5xl">
+            <h2 className="landing-heading text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
               A City Where Time <br />
               <span className="text-primary">is Unpredictable.</span>
             </h2>
           </div>
 
           <motion.div
-            className="list-none space-y-8"
+            className="list-none space-y-6 sm:space-y-8"
             variants={container}
             initial="hidden"
             whileInView="visible"
@@ -85,10 +87,10 @@ export default function WhyDelhiSection() {
             {reasons.map((reason) => (
               <motion.div
                 key={reason.number}
-                className="flex items-start gap-6"
+                className="flex items-start gap-4 sm:gap-6"
                 variants={item}
               >
-                <span className="flex-shrink-0 text-3xl leading-none font-bold text-border">
+                <span className="flex-shrink-0 text-2xl leading-none font-bold text-border sm:text-3xl">
                   {reason.number}
                 </span>
                 <div>

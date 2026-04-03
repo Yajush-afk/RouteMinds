@@ -202,6 +202,21 @@
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
+  .landing-theme .landing-primary-button,
+  .landing-theme .landing-hover-lift,
+  .landing-theme button,
+  .landing-theme [data-slot="button"] {
+    transition-duration: 0.16s;
+  }
+
+  .landing-theme .landing-primary-button:hover,
+  .landing-theme .landing-hover-lift:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
 @layer base {
   html:has(.landing-theme),
   body:has(.landing-theme) {

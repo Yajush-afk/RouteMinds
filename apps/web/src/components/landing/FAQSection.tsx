@@ -38,14 +38,17 @@ const faqs = [
 
 export default function FAQSection() {
   return (
-    <section id="faqs" className="bg-background px-8 py-24 md:px-16 lg:px-24">
+    <section
+      id="faqs"
+      className="bg-background px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+    >
       <div className="mx-auto max-w-3xl">
         {/* Header */}
-        <div className="mb-12 text-center">
+        <div className="mb-10 text-center sm:mb-12">
           <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
             Got Questions?
           </p>
-          <h2 className="landing-heading text-4xl text-foreground md:text-5xl">
+          <h2 className="landing-heading text-3xl text-foreground sm:text-4xl md:text-5xl">
             Frequently Asked Questions
           </h2>
           <div className="mx-auto mt-4 h-1 w-10 rounded-full bg-primary"></div>
@@ -59,10 +62,12 @@ export default function FAQSection() {
                 value={`item-${index}`}
                 className="border-b-0 not-last:border-b-0"
               >
-                <AccordionTrigger className="landing-heading rounded-xl">
+                <AccordionTrigger className="landing-heading rounded-xl text-base sm:text-lg">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent>{faq.answer}</AccordionContent>
+                <AccordionContent className="text-sm leading-relaxed sm:text-base">
+                  {faq.answer}
+                </AccordionContent>
               </AccordionItem>
               {index < faqs.length - 1 && <Separator />}
             </Fragment>

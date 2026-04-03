@@ -19,10 +19,10 @@ export default function Navbar() {
   }, [])
 
   return (
-    <nav className="fixed inset-x-0 top-0 z-50 px-4 pt-4 md:px-6">
+    <nav className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-4 md:px-6">
       <div
         className={cn(
-          "mx-auto flex max-w-7xl items-center justify-between rounded-xl bg-background/75 px-5 py-3 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200",
+          "mx-auto flex max-w-7xl items-center justify-between rounded-xl bg-background/75 px-4 py-2.5 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200 sm:px-5 sm:py-3",
           isScrolled
             ? "border border-border/50 shadow-sm"
             : "border border-transparent shadow-none"
@@ -30,7 +30,7 @@ export default function Navbar() {
       >
         <Link
           to="/"
-          className="landing-heading text-lg tracking-tight text-foreground md:text-xl"
+          className="landing-heading text-base tracking-tight text-foreground sm:text-lg md:text-xl"
         >
           RouteMinds
         </Link>
@@ -63,12 +63,11 @@ export default function Navbar() {
         </div>
 
         <Button
-          type="button"
+          asChild
           variant="outline"
-          size="lg"
-          className="landing-hover-lift rounded-xl border-border bg-transparent px-6 text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)]"
+          className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
         >
-          Sign Up
+          <Link to="/map">Sign Up</Link>
         </Button>
       </div>
     </nav>

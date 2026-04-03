@@ -66,6 +66,17 @@ export default function FeaturesSection() {
   const [current, setCurrent] = useState(0)
   const [isInView, setIsInView] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    const updateIsMobile = () => setIsMobile(mediaQuery.matches)
+
+    updateIsMobile()
+    mediaQuery.addEventListener("change", updateIsMobile)
+
+    return () => mediaQuery.removeEventListener("change", updateIsMobile)
+  }, [])
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -98,37 +109,70 @@ export default function FeaturesSection() {
   }, [api])
 
   useEffect(() => {
-    if (!api || !isInView || shouldReduceMotion || isPaused) return
+    if (!api || !isInView || shouldReduceMotion || isPaused || isMobile) return
 
     const interval = window.setInterval(() => {
       api.scrollNext()
     }, 2500)
 
     return () => window.clearInterval(interval)
-  }, [api, isInView, shouldReduceMotion, isPaused])
+  }, [api, isInView, shouldReduceMotion, isPaused, isMobile])
 
   return (
     <section
       id="features"
       ref={sectionRef}
-      className="bg-secondary px-8 py-20 md:px-16 lg:px-24"
+      className="bg-secondary px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
       <div className="mx-auto max-w-7xl">
         <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
           What We Offer
         </p>
         <div className="mb-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-          <h2 className="landing-heading max-w-lg text-4xl leading-tight text-foreground md:text-5xl">
+          <h2 className="landing-heading max-w-lg text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
             Travel Smarter,
             <br /> Not Harder.
           </h2>
         </div>
-        <p className="mb-12 max-w-sm text-base leading-relaxed text-muted-foreground">
+        <p className="mb-8 max-w-md text-base leading-relaxed text-muted-foreground sm:mb-12">
           Our ML engine processes thousands of real-time data points to keep
           Delhi moving efficiently.
         </p>
 
-        <div className="flex items-center gap-4">
+        <Carousel
+          setApi={setApi}
+          opts={{ align: "start", loop: true }}
+          className="w-full"
+        >
+          <CarouselContent>
+            {features.map((feature) => (
+              <CarouselItem key={feature.title}>
+                <div
+                  className="flex min-h-[240px] flex-col justify-between rounded-2xl border border-border bg-background p-5 sm:min-h-[220px] sm:p-6 md:min-h-50 md:p-8"
+                  onMouseEnter={() => setIsPaused(true)}
+                  onMouseLeave={() => setIsPaused(false)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shadow-sm sm:h-11 sm:w-11">
+                      {feature.icon}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 sm:mt-6">
+                    <h3 className="landing-heading mb-2 text-lg text-foreground sm:text-xl">
+                      {feature.title}
+                    </h3>
+                    <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+                      {feature.description}
+                    </p>
+                  </div>
+                </div>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+        </Carousel>
+
+        <div className="mt-4 flex items-center justify-between gap-3 sm:mt-6">
           <Button
             type="button"
             variant="outline"
@@ -140,38 +184,24 @@ export default function FeaturesSection() {
             <ChevronLeft />
           </Button>
 
-          <Carousel
-            setApi={setApi}
-            opts={{ align: "start", loop: true }}
-            className="flex-1"
-          >
-            <CarouselContent>
-              {features.map((feature) => (
-                <CarouselItem key={feature.title}>
-                  <div
-                    className="flex min-h-[200px] flex-col justify-between rounded-2xl border border-border bg-background p-8"
-                    onMouseEnter={() => setIsPaused(true)}
-                    onMouseLeave={() => setIsPaused(false)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary shadow-sm">
-                        {feature.icon}
-                      </div>
-                    </div>
-
-                    <div className="mt-6">
-                      <h3 className="landing-heading mb-2 text-xl text-foreground">
-                        {feature.title}
-                      </h3>
-                      <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-                        {feature.description}
-                      </p>
-                    </div>
-                  </div>
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </Carousel>
+          <div className="flex flex-1 justify-center gap-2">
+            {features.map((feature, index) => (
+              <Button
+                key={feature.title}
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => api?.scrollTo(index)}
+                aria-label={`Go to ${feature.title}`}
+                className={cn(
+                  "h-2 min-w-0 rounded-xl px-0 transition-all duration-300 hover:bg-primary/20",
+                  current === index
+                    ? "w-6 bg-primary hover:bg-primary/90"
+                    : "w-2 bg-border"
+                )}
+              />
+            ))}
+          </div>
 
           <Button
             type="button"
@@ -183,25 +213,6 @@ export default function FeaturesSection() {
           >
             <ChevronRight />
           </Button>
-        </div>
-
-        <div className="mt-6 flex justify-center gap-2">
-          {features.map((feature, index) => (
-            <Button
-              key={feature.title}
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => api?.scrollTo(index)}
-              aria-label={`Go to ${feature.title}`}
-              className={cn(
-                "h-2 min-w-0 rounded-xl px-0 transition-all duration-300 hover:bg-primary/20",
-                current === index
-                  ? "w-6 bg-primary hover:bg-primary/90"
-                  : "w-2 bg-border"
-              )}
-            />
-          ))}
         </div>
       </div>
     </section>
