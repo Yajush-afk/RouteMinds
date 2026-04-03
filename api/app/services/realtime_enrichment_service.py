@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
+from google.transit import gtfs_realtime_pb2
 
 from api.app.core.config import REPO_ROOT, settings
 from api.app.core.exceptions import GTFSRealtimeException, GTFSStaticDataException
@@ -64,6 +65,42 @@ class SegmentObservation:
     delay_minutes: float
     observation_timestamp: int
 
+
+@dataclass(frozen=True, slots=True)
+class RefreshResult:
+    fetched_snapshots: int
+    enriched_segments: int
+    latest_snapshot_time: int | None
+    unmatched_snapshots: int
+    unmatched_trips: int
+    unmatched_vehicles: int
+    malformed_records: int
+    provider_format: str | None
+    auth_mode: str
+    last_refresh_successful: bool
+    last_refresh_error: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimeOperationalStatus:
+    configured: bool
+    last_refresh_time: int | None
+    last_successful_refresh_time: int | None
+    latest_snapshot_time: int | None
+    fetched_snapshots: int
+    enriched_segments: int
+    unmatched_snapshots: int
+    unmatched_trips: int
+    unmatched_vehicles: int
+    malformed_records: int
+    cached_segments: int
+    cached_vehicles: int
+    cache_max_age_seconds: int
+    cache_is_fresh: bool
+    provider_format: str | None
+    auth_mode: str
+    last_refresh_successful: bool
+    last_refresh_error: str | None
 
 def resolve_rt_path(value: str | Path) -> Path:
     path = Path(value)
@@ -162,6 +199,9 @@ class GTFSRealtimeIngestionService:
         vehicle_positions_url: str,
         api_key: str,
         snapshot_path: str | Path | None = None,
+        auth_mode: str = "auto",
+        api_key_query_param: str = "key",
+        response_format: str = "auto",
         timeout_seconds: float = 15.0,
     ):
         self.vehicle_positions_url = vehicle_positions_url
@@ -169,7 +209,15 @@ class GTFSRealtimeIngestionService:
         self.snapshot_path = (
             resolve_rt_path(snapshot_path) if snapshot_path else None
         )
+        self.auth_mode = auth_mode
+        self.api_key_query_param = api_key_query_param
+        self.response_format = response_format
         self.timeout_seconds = timeout_seconds
+        self.last_provider_format: str | None = None
+        self.last_raw_record_count = 0
+        self.last_malformed_record_count = 0
+        self.last_refresh_error: str | None = None
+        self.last_http_status_code: int | None = None
 
     def fetch_vehicle_positions(self) -> list[VehiclePositionSnapshot]:
         if not self.vehicle_positions_url:
@@ -179,25 +227,83 @@ class GTFSRealtimeIngestionService:
         if not self.api_key:
             raise GTFSRealtimeException("GTFS real-time API key is not configured.")
 
-        headers = {"Authorization": self.api_key, "x-api-key": self.api_key}
+        request_kwargs = self._build_request_kwargs()
         try:
             response = httpx.get(
                 self.vehicle_positions_url,
-                headers=headers,
                 timeout=self.timeout_seconds,
+                **request_kwargs,
             )
+            self.last_http_status_code = response.status_code
             response.raise_for_status()
         except httpx.HTTPError as exc:
-            raise GTFSRealtimeException(
+            self.last_refresh_error = (
                 f"Unable to fetch GTFS real-time vehicle positions: {exc}"
+            )
+            raise GTFSRealtimeException(
+                self.last_refresh_error
             ) from exc
 
-        snapshots = self._normalize_response(response.json())
+        snapshots = self._parse_response(response)
+        self.last_refresh_error = None
         if self.snapshot_path:
             self._persist_snapshots(snapshots)
         return snapshots
 
-    def _normalize_response(self, payload) -> list[VehiclePositionSnapshot]:
+    def _build_request_kwargs(self) -> dict[str, dict[str, str]]:
+        auth_mode = self._resolve_auth_mode()
+        if auth_mode == "query":
+            return {
+                "params": {self.api_key_query_param: self.api_key},
+                "headers": {},
+            }
+        return {
+            "params": {},
+            "headers": {
+                "Authorization": self.api_key,
+                "x-api-key": self.api_key,
+            },
+        }
+
+    def _resolve_auth_mode(self) -> str:
+        if self.auth_mode != "auto":
+            return self.auth_mode
+        if self.vehicle_positions_url.lower().endswith(".pb"):
+            return "query"
+        return "headers"
+
+    def _resolve_response_format(self, response: httpx.Response) -> str:
+        if self.response_format != "auto":
+            return self.response_format
+
+        content_type = response.headers.get("content-type", "").lower()
+        if "json" in content_type:
+            return "json"
+        if "protobuf" in content_type or "octet-stream" in content_type:
+            return "protobuf"
+        if str(response.request.url).lower().endswith(".pb"):
+            return "protobuf"
+
+        try:
+            response.json()
+            return "json"
+        except (ValueError, json.JSONDecodeError):
+            return "protobuf"
+
+    def _parse_response(self, response: httpx.Response) -> list[VehiclePositionSnapshot]:
+        response_format = self._resolve_response_format(response)
+        self.last_provider_format = response_format
+        if response_format == "protobuf":
+            return self._normalize_protobuf_response(response.content)
+        try:
+            payload = response.json()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise GTFSRealtimeException(
+                "GTFS real-time response is not valid JSON."
+            ) from exc
+        return self._normalize_json_response(payload)
+
+    def _normalize_json_response(self, payload) -> list[VehiclePositionSnapshot]:
         if isinstance(payload, list):
             records = payload
         elif isinstance(payload, dict):
@@ -213,22 +319,77 @@ class GTFSRealtimeIngestionService:
         else:
             raise GTFSRealtimeException("Unsupported GTFS real-time payload format.")
 
+        self.last_raw_record_count = len(records)
+        self.last_malformed_record_count = 0
         snapshots = []
         for record in records:
-            snapshots.append(
-                VehiclePositionSnapshot(
-                    vehicle_id=str(record["vehicle_id"]),
-                    trip_id=str(record["trip_id"]),
-                    route_id=str(record["route_id"]),
-                    start_time=str(record.get("start_time", "")),
-                    start_date=str(record["start_date"]),
-                    latitude=float(record["latitude"]),
-                    longitude=float(record["longitude"]),
-                    speed_mps=float(record.get("speed_mps", 0.0)),
-                    gps_timestamp=int(record["gps_timestamp"]),
-                    snapshot_time=int(record["snapshot_time"]),
+            try:
+                snapshots.append(
+                    VehiclePositionSnapshot(
+                        vehicle_id=str(record["vehicle_id"]),
+                        trip_id=str(record.get("trip_id", "")),
+                        route_id=str(record.get("route_id", "")),
+                        start_time=str(record.get("start_time", "")),
+                        start_date=str(record["start_date"]),
+                        latitude=float(record["latitude"]),
+                        longitude=float(record["longitude"]),
+                        speed_mps=float(record.get("speed_mps", 0.0)),
+                        gps_timestamp=int(record["gps_timestamp"]),
+                        snapshot_time=int(record.get("snapshot_time", record["gps_timestamp"])),
+                    )
                 )
-            )
+            except (KeyError, TypeError, ValueError):
+                self.last_malformed_record_count += 1
+                continue
+        return snapshots
+
+    def _normalize_protobuf_response(self, payload: bytes) -> list[VehiclePositionSnapshot]:
+        if not payload:
+            self.last_raw_record_count = 0
+            self.last_malformed_record_count = 0
+            return []
+
+        feed = gtfs_realtime_pb2.FeedMessage()
+        try:
+            feed.ParseFromString(payload)
+        except Exception as exc:
+            raise GTFSRealtimeException(
+                "GTFS real-time protobuf payload could not be parsed."
+            ) from exc
+
+        feed_timestamp = int(feed.header.timestamp) if feed.header.timestamp else int(time.time())
+        entities = list(feed.entity)
+        self.last_raw_record_count = len(entities)
+        self.last_malformed_record_count = 0
+        snapshots: list[VehiclePositionSnapshot] = []
+        for entity in entities:
+            if not entity.HasField("vehicle"):
+                self.last_malformed_record_count += 1
+                continue
+            vehicle = entity.vehicle
+            if not vehicle.HasField("position") or not vehicle.HasField("trip"):
+                self.last_malformed_record_count += 1
+                continue
+            try:
+                gps_timestamp = int(vehicle.timestamp) if vehicle.timestamp else feed_timestamp
+                snapshot_time = feed_timestamp
+                snapshots.append(
+                    VehiclePositionSnapshot(
+                        vehicle_id=str(vehicle.vehicle.id or entity.id),
+                        trip_id=str(vehicle.trip.trip_id),
+                        route_id=str(vehicle.trip.route_id),
+                        start_time=str(vehicle.trip.start_time),
+                        start_date=str(vehicle.trip.start_date),
+                        latitude=float(vehicle.position.latitude),
+                        longitude=float(vehicle.position.longitude),
+                        speed_mps=float(vehicle.position.speed or 0.0),
+                        gps_timestamp=gps_timestamp,
+                        snapshot_time=snapshot_time,
+                    )
+                )
+            except (TypeError, ValueError):
+                self.last_malformed_record_count += 1
+                continue
         return snapshots
 
     def _persist_snapshots(self, snapshots: list[VehiclePositionSnapshot]) -> None:
@@ -242,9 +403,11 @@ class RealtimeEnrichmentService:
         self,
         gtfs_static_dir: str | Path,
         ingestion_service: GTFSRealtimeIngestionService,
+        cache_max_age_seconds: int = 300,
     ):
         self.gtfs_static_dir = str(gtfs_static_dir)
         self.ingestion_service = ingestion_service
+        self.cache_max_age_seconds = cache_max_age_seconds
         self.trip_stop_events = load_trip_stop_events(gtfs_static_dir)
         self.segment_live_context: dict[tuple[str, str, str], SegmentLiveContext] = {}
         self.segment_delay_history: dict[tuple[str, str], deque[float]] = defaultdict(
@@ -253,12 +416,49 @@ class RealtimeEnrichmentService:
         self.latest_vehicle_snapshot: dict[str, VehiclePositionSnapshot] = {}
         self.latest_vehicle_observation: dict[str, SegmentObservation] = {}
         self.last_refresh_time: int | None = None
+        self.last_successful_refresh_time: int | None = None
         self.latest_snapshot_time: int | None = None
+        self.last_refresh_result = RefreshResult(
+            fetched_snapshots=0,
+            enriched_segments=0,
+            latest_snapshot_time=None,
+            unmatched_snapshots=0,
+            unmatched_trips=0,
+            unmatched_vehicles=0,
+            malformed_records=0,
+            provider_format=None,
+            auth_mode=self.ingestion_service._resolve_auth_mode(),
+            last_refresh_successful=False,
+            last_refresh_error=None,
+        )
 
-    def refresh_vehicle_positions(self) -> dict[str, int | None]:
-        snapshots = self.ingestion_service.fetch_vehicle_positions()
+    def refresh_vehicle_positions(self) -> dict[str, int | bool | str | None]:
+        now = int(time.time())
+        self.last_refresh_time = now
+        unmatched_vehicle_ids: set[str] = set()
+        unmatched_trip_ids: set[str] = set()
+
+        try:
+            snapshots = self.ingestion_service.fetch_vehicle_positions()
+        except GTFSRealtimeException as exc:
+            self.last_refresh_result = RefreshResult(
+                fetched_snapshots=0,
+                enriched_segments=0,
+                latest_snapshot_time=self.latest_snapshot_time,
+                unmatched_snapshots=0,
+                unmatched_trips=0,
+                unmatched_vehicles=0,
+                malformed_records=self.ingestion_service.last_malformed_record_count,
+                provider_format=self.ingestion_service.last_provider_format,
+                auth_mode=self.ingestion_service._resolve_auth_mode(),
+                last_refresh_successful=False,
+                last_refresh_error=str(exc),
+            )
+            raise
+
         enriched_count = 0
         latest_snapshot_time: int | None = None
+        unmatched_snapshots = 0
 
         for snapshot in snapshots:
             latest_snapshot_time = (
@@ -266,47 +466,97 @@ class RealtimeEnrichmentService:
                 if latest_snapshot_time is None
                 else max(latest_snapshot_time, snapshot.snapshot_time)
             )
-            if self._ingest_snapshot(snapshot):
+            ingest_outcome = self._ingest_snapshot(snapshot)
+            if ingest_outcome == "enriched":
                 enriched_count += 1
+                continue
+            unmatched_snapshots += 1
+            unmatched_vehicle_ids.add(snapshot.vehicle_id)
+            if snapshot.trip_id:
+                unmatched_trip_ids.add(snapshot.trip_id)
 
-        now = int(time.time())
-        self.last_refresh_time = now
         self.latest_snapshot_time = latest_snapshot_time
-        return {
-            "fetched_snapshots": len(snapshots),
-            "enriched_segments": enriched_count,
-            "latest_snapshot_time": latest_snapshot_time,
-        }
+        self.last_successful_refresh_time = now
+        self.last_refresh_result = RefreshResult(
+            fetched_snapshots=len(snapshots),
+            enriched_segments=enriched_count,
+            latest_snapshot_time=latest_snapshot_time,
+            unmatched_snapshots=unmatched_snapshots,
+            unmatched_trips=len(unmatched_trip_ids),
+            unmatched_vehicles=len(unmatched_vehicle_ids),
+            malformed_records=self.ingestion_service.last_malformed_record_count,
+            provider_format=self.ingestion_service.last_provider_format,
+            auth_mode=self.ingestion_service._resolve_auth_mode(),
+            last_refresh_successful=True,
+            last_refresh_error=None,
+        )
+        return asdict(self.last_refresh_result)
 
     def get_segment_live_context(
         self,
         route_id: str | int,
         from_stop_id: str | int,
         to_stop_id: str | int,
+        reference_timestamp: int | None = None,
     ) -> SegmentLiveContext | None:
         key = (str(route_id), str(from_stop_id), str(to_stop_id))
-        return self.segment_live_context.get(key)
+        context = self.segment_live_context.get(key)
+        if context is None:
+            return None
+        reference_timestamp = reference_timestamp or int(time.time())
+        if self._context_is_stale(context, reference_timestamp):
+            return None
+        return context
 
-    def get_status(self) -> dict[str, int | bool | None]:
+    def get_status(self) -> dict[str, int | bool | str | None]:
         configured = bool(
             self.ingestion_service.vehicle_positions_url and self.ingestion_service.api_key
         )
-        return {
-            "configured": configured,
-            "last_refresh_time": self.last_refresh_time,
-            "latest_snapshot_time": self.latest_snapshot_time,
-            "cached_segments": len(self.segment_live_context),
-            "cached_vehicles": len(self.latest_vehicle_snapshot),
-        }
+        status = RealtimeOperationalStatus(
+            configured=configured,
+            last_refresh_time=self.last_refresh_time,
+            last_successful_refresh_time=self.last_successful_refresh_time,
+            latest_snapshot_time=self.latest_snapshot_time,
+            fetched_snapshots=self.last_refresh_result.fetched_snapshots,
+            enriched_segments=self.last_refresh_result.enriched_segments,
+            unmatched_snapshots=self.last_refresh_result.unmatched_snapshots,
+            unmatched_trips=self.last_refresh_result.unmatched_trips,
+            unmatched_vehicles=self.last_refresh_result.unmatched_vehicles,
+            malformed_records=self.last_refresh_result.malformed_records,
+            cached_segments=len(self.segment_live_context),
+            cached_vehicles=len(self.latest_vehicle_snapshot),
+            cache_max_age_seconds=self.cache_max_age_seconds,
+            cache_is_fresh=self._cache_is_fresh(),
+            provider_format=self.last_refresh_result.provider_format,
+            auth_mode=self.last_refresh_result.auth_mode,
+            last_refresh_successful=self.last_refresh_result.last_refresh_successful,
+            last_refresh_error=self.last_refresh_result.last_refresh_error,
+        )
+        return asdict(status)
 
-    def _ingest_snapshot(self, snapshot: VehiclePositionSnapshot) -> bool:
+    def _cache_is_fresh(self, reference_timestamp: int | None = None) -> bool:
+        if self.latest_snapshot_time is None:
+            return False
+        reference_timestamp = reference_timestamp or int(time.time())
+        return (reference_timestamp - self.latest_snapshot_time) <= self.cache_max_age_seconds
+
+    def _context_is_stale(
+        self,
+        context: SegmentLiveContext,
+        reference_timestamp: int,
+    ) -> bool:
+        return (reference_timestamp - context.last_update_timestamp) > self.cache_max_age_seconds
+
+    def _ingest_snapshot(self, snapshot: VehiclePositionSnapshot) -> str:
+        if not snapshot.trip_id:
+            return "missing_trip_id"
         trip_events = self.trip_stop_events.get(snapshot.trip_id)
         if not trip_events or len(trip_events) < 2:
-            return False
+            return "missing_trip_match"
 
         segment_observation = self._infer_segment_observation(snapshot, trip_events)
         if segment_observation is None:
-            return False
+            return "segment_not_inferred"
 
         key = (
             segment_observation.route_id,
@@ -315,7 +565,7 @@ class RealtimeEnrichmentService:
         )
         current_context = self.segment_live_context.get(key)
         if current_context and current_context.last_update_timestamp > snapshot.snapshot_time:
-            return False
+            return "stale_snapshot"
 
         trip_segment_key = (snapshot.trip_id, segment_observation.to_stop_id)
         history = self.segment_delay_history[trip_segment_key]
@@ -335,7 +585,7 @@ class RealtimeEnrichmentService:
         )
         self.latest_vehicle_snapshot[snapshot.vehicle_id] = snapshot
         self.latest_vehicle_observation[snapshot.vehicle_id] = segment_observation
-        return True
+        return "enriched"
 
     def _infer_segment_observation(
         self,
@@ -412,7 +662,7 @@ class RealtimeEnrichmentService:
         self,
         observation: SegmentObservation,
         trip_events: tuple[TripStopEvent, ...],
-    ) -> int:
+    ) -> int | None:
         for event in trip_events:
             if event.stop_id == observation.to_stop_id:
                 return event.stop_sequence
@@ -429,9 +679,13 @@ def get_realtime_enrichment_service() -> RealtimeEnrichmentService:
             vehicle_positions_url=settings.GTFS_RT_VEHICLE_POSITIONS_URL,
             api_key=settings.GTFS_RT_API_KEY,
             snapshot_path=settings.GTFS_RT_SNAPSHOT_PATH or None,
+            auth_mode=settings.GTFS_RT_AUTH_MODE,
+            api_key_query_param=settings.GTFS_RT_API_KEY_QUERY_PARAM,
+            response_format=settings.GTFS_RT_RESPONSE_FORMAT,
         )
         _realtime_enrichment_service = RealtimeEnrichmentService(
             gtfs_static_dir=settings.GTFS_STATIC_DIR,
             ingestion_service=ingestion_service,
+            cache_max_age_seconds=settings.GTFS_RT_CACHE_MAX_AGE_SECONDS,
         )
     return _realtime_enrichment_service

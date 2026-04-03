@@ -113,9 +113,10 @@ Current backend state:
 
 - `api/app/main.py` wires the FastAPI app and routers
 - `/api/v1/health` is available
-- route optimization and prediction endpoints are still placeholders
-- inference-side model loading utilities exist, but end-to-end API integration
-  is not complete yet
+- `/api/v1/predictions/segments` serves segment travel-time and delay predictions
+- `/api/v1/routes/optimize` computes stop-to-stop paths using predicted segment costs
+- `/api/v1/realtime/refresh` and `/api/v1/realtime/status` manage live GTFS-RT ingestion
+- GTFS static graph construction, route optimization, and live enrichment are implemented
 
 Run the backend from the repo root with:
 
@@ -172,15 +173,19 @@ Required real-time backend settings:
 
 - `GTFS_RT_VEHICLE_POSITIONS_URL`
 - `GTFS_RT_API_KEY`
+- `GTFS_RT_AUTH_MODE`
+- `GTFS_RT_API_KEY_QUERY_PARAM`
+- `GTFS_RT_RESPONSE_FORMAT`
 - `GTFS_RT_REFRESH_INTERVAL_SECONDS`
+- `GTFS_RT_CACHE_MAX_AGE_SECONDS`
 - `GTFS_RT_SNAPSHOT_PATH` (optional)
 
 ## Next Recommended Step
 
-The next backend milestone is real-time enrichment and inference integration:
+The next backend milestone is backend auth and demo hardening:
 
-1. ingest raw GTFS-RT vehicle snapshots
-2. join them with GTFS static trip/stop-time context
-3. reconstruct the same segment feature contract used in training
-4. call the trained model for segment travel-time prediction
-5. feed predicted segment costs into the future routing engine
+1. add Auth0 JWT verification to protect route and realtime endpoints
+2. tighten realtime trip/segment matching to improve live enrichment coverage
+3. align the frontend/backend contract for the route optimization flow
+4. prepare a demo deployment checklist and environment template
+5. retrain on the collected real-time dataset after the 7-day pull is complete
