@@ -116,6 +116,44 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         with self.assertRaises(RouteNotFoundException):
             service.optimize_route("A", "D", 1742803800)
 
+    def test_service_scores_downstream_edges_with_arrival_time(self) -> None:
+        class TimeAwarePredictionService:
+            def __init__(self):
+                self.timestamps: list[int] = []
+
+            def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
+                predictions = []
+                for record in segment_records:
+                    timestamp = int(record["segment_start_scheduled_unix"])
+                    self.timestamps.append(timestamp)
+                    edge_key = (
+                        str(record["from_stop_id"]),
+                        str(record["to_stop_id"]),
+                    )
+                    if edge_key == ("A", "B"):
+                        predicted_actual = 10.0
+                    elif edge_key == ("A", "C"):
+                        predicted_actual = 30.0
+                    else:
+                        predicted_actual = 5.0
+                    predictions.append(
+                        {
+                            "predicted_actual_segment_minutes": predicted_actual,
+                            "predicted_segment_delay_minutes": predicted_actual
+                            - float(record["scheduled_segment_minutes"]),
+                        }
+                    )
+                return predictions
+
+        graph_service = StubGraphService(build_test_graph())
+        prediction_service = TimeAwarePredictionService()
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        service.optimize_route("A", "C", 1742803800)
+
+        self.assertIn(1742803800, prediction_service.timestamps)
+        self.assertIn(1742804400, prediction_service.timestamps)
+
 
 class StubRouteOptimizationApiService:
     def optimize_route(
