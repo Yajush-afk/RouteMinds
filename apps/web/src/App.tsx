@@ -1,10 +1,14 @@
 import { Suspense, lazy } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 
+import ProtectedRoute from "@/auth/ProtectedRoute"
+
 const LandingPage = lazy(() => import("@/pages/LandingPage"))
 const MapPage = lazy(() => import("@/pages/MapPage"))
-const SignupPage = lazy(() => import("@/pages/SignupPage"))
-const LoginPage = lazy(() => import("@/pages/LoginPage"))
+const AuthPage = lazy(() => import("@/pages/AuthPage"))
+const LegacyAuthRedirect = lazy(
+  () => import("@/components/auth/LegacyAuthRedirect")
+)
 
 function RouteFallback() {
   return (
@@ -19,9 +23,12 @@ export function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/map" element={<MapPage />} />
+        <Route path="/auth" element={<AuthPage />} />
+        <Route path="/login" element={<LegacyAuthRedirect />} />
+        <Route path="/signup" element={<LegacyAuthRedirect />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/map" element={<MapPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

@@ -1,10 +1,5 @@
-import Layout from "@/components/signup/Layout"
-import Form from "@/components/signup/Form"
+import LegacyAuthRedirect from "@/components/auth/LegacyAuthRedirect"
 
 export default function SignupPage() {
-  return (
-    <Layout>
-      <Form />
-    </Layout>
-  )
+  return <LegacyAuthRedirect />
 }
