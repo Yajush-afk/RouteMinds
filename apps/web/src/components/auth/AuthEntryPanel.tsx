@@ -189,7 +189,6 @@ export default function AuthEntryPanel() {
     setOtpStep(null)
   }
 
-  const title = "Continue to RouteMinds"
   const intro = "Enter your phone or email"
   const maskedDestination = otpStep
     ? maskIdentifier(parseIdentifier(otpStep.identifier))

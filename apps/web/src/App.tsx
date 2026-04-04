@@ -6,9 +6,6 @@ import ProtectedRoute from "@/auth/ProtectedRoute"
 const LandingPage = lazy(() => import("@/pages/LandingPage"))
 const MapPage = lazy(() => import("@/pages/MapPage"))
 const AuthPage = lazy(() => import("@/pages/AuthPage"))
-const LegacyAuthRedirect = lazy(
-  () => import("@/components/auth/LegacyAuthRedirect")
-)
 
 function RouteFallback() {
   return (
@@ -24,8 +21,6 @@ export function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
-        <Route path="/login" element={<LegacyAuthRedirect />} />
-        <Route path="/signup" element={<LegacyAuthRedirect />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/map" element={<MapPage />} />
         </Route>
