@@ -12,8 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@auth0/auth0-react": "^2.16.1",
     "@workspace/ui": "workspace:*",
-    "auth0-js": "^9.32.0",
     "lucide-react": "^0.577.0",
     "maplibre-gl": "^5.20.2",
     "motion": "^12.38.0",

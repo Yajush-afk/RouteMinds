@@ -1,7 +1,7 @@
 export type Auth0Config = {
+  audience: string
   domain: string
   clientId: string
-  audience?: string
   emailConnection: string
   googleConnection?: string
   redirectUri: string
@@ -9,14 +9,17 @@ export type Auth0Config = {
   smsConnection: string
 }
 
-function readOptionalEnv(name: "VITE_AUTH0_DOMAIN" | "VITE_AUTH0_CLIENT_ID") {
+function readRequiredEnv(
+  name: "VITE_AUTH0_AUDIENCE" | "VITE_AUTH0_CLIENT_ID" | "VITE_AUTH0_DOMAIN"
+) {
   return import.meta.env[name]?.trim() || ""
 }
 
 export function getAuth0ConfigError() {
   const missing = [
-    !readOptionalEnv("VITE_AUTH0_DOMAIN") ? "VITE_AUTH0_DOMAIN" : null,
-    !readOptionalEnv("VITE_AUTH0_CLIENT_ID") ? "VITE_AUTH0_CLIENT_ID" : null,
+    !readRequiredEnv("VITE_AUTH0_DOMAIN") ? "VITE_AUTH0_DOMAIN" : null,
+    !readRequiredEnv("VITE_AUTH0_CLIENT_ID") ? "VITE_AUTH0_CLIENT_ID" : null,
+    !readRequiredEnv("VITE_AUTH0_AUDIENCE") ? "VITE_AUTH0_AUDIENCE" : null,
   ].filter(Boolean)
 
   if (missing.length === 0) {
@@ -34,12 +37,14 @@ export function getAuth0Config(): Auth0Config | null {
   }
 
   return {
-    domain: readOptionalEnv("VITE_AUTH0_DOMAIN"),
-    clientId: readOptionalEnv("VITE_AUTH0_CLIENT_ID"),
-    audience: import.meta.env.VITE_AUTH0_AUDIENCE?.trim() || undefined,
-    emailConnection: import.meta.env.VITE_AUTH0_EMAIL_CONNECTION?.trim() || "email",
-    googleConnection: import.meta.env.VITE_AUTH0_GOOGLE_CONNECTION?.trim() || undefined,
-    redirectUri: window.location.origin,
+    audience: readRequiredEnv("VITE_AUTH0_AUDIENCE"),
+    domain: readRequiredEnv("VITE_AUTH0_DOMAIN"),
+    clientId: readRequiredEnv("VITE_AUTH0_CLIENT_ID"),
+    emailConnection:
+      import.meta.env.VITE_AUTH0_EMAIL_CONNECTION?.trim() || "email",
+    googleConnection:
+      import.meta.env.VITE_AUTH0_GOOGLE_CONNECTION?.trim() || undefined,
+    redirectUri: `${window.location.origin}/auth`,
     scope: import.meta.env.VITE_AUTH0_SCOPE?.trim() || "openid profile email",
     smsConnection: import.meta.env.VITE_AUTH0_SMS_CONNECTION?.trim() || "sms",
   }

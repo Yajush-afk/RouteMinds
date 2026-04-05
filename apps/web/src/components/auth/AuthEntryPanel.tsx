@@ -1,12 +1,7 @@
-import { useDeferredValue, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { useRouteMindsAuth } from "@/auth/Auth0ProviderWithNavigate"
-import {
-  maskIdentifier,
-  parseIdentifier,
-  type IdentifierKind,
-} from "@/auth/identifier"
 import { Button } from "@workspace/ui/components/button"
 import {
   Field,
@@ -16,19 +11,9 @@ import {
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@workspace/ui/components/input-otp"
 import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
-import { AlertCircle, LoaderCircle, PencilLine, Smartphone, Mail } from "lucide-react"
-
-type OtpStepState = {
-  channel: IdentifierKind
-  identifier: string
-}
+import { AlertCircle, LoaderCircle } from "lucide-react"
 
 function GoogleIcon() {
   return (
@@ -89,20 +74,14 @@ export default function AuthEntryPanel() {
     isLoading,
     loginWithGoogle,
     startPasswordless,
-    verifyPasswordless,
   } = useRouteMindsAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [identifierInput, setIdentifierInput] = useState("")
   const [identifierError, setIdentifierError] = useState<string | null>(null)
-  const [otpError, setOtpError] = useState<string | null>(null)
-  const [otpStep, setOtpStep] = useState<OtpStepState | null>(null)
-  const [otpValue, setOtpValue] = useState("")
   const [pendingAction, setPendingAction] = useState<
-    "otp-send" | "otp-resend" | "otp-verify" | "google" | null
+    "continue" | "google" | null
   >(null)
-
-  const deferredOtpValue = useDeferredValue(otpValue)
   const returnTo =
     new URLSearchParams(location.search).get("returnTo")?.trim() || "/map"
 
@@ -112,56 +91,18 @@ export default function AuthEntryPanel() {
     }
   }, [isAuthenticated, isLoading, navigate, returnTo])
 
-  async function handleOtpStart(nextPendingAction: "otp-send" | "otp-resend") {
+  async function handleContinue() {
     setIdentifierError(null)
-    setOtpError(null)
-    setPendingAction(nextPendingAction)
+    setPendingAction("continue")
 
     try {
-      const result = await startPasswordless(identifierInput, returnTo)
-      setIdentifierInput(result.identifier)
-      setOtpStep({
-        channel: result.channel,
-        identifier: result.identifier,
-      })
-      setOtpValue("")
+      await startPasswordless(identifierInput, returnTo)
     } catch (startError) {
-      const message =
+      setPendingAction(null)
+      setIdentifierError(
         startError instanceof Error
           ? startError.message
           : "We could not send a one-time code."
-
-      if (otpStep) {
-        setOtpError(message)
-      } else {
-        setIdentifierError(message)
-      }
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  async function handleOtpVerify() {
-    if (!otpStep) {
-      return
-    }
-
-    if (deferredOtpValue.length !== 6) {
-      setOtpError("Enter the 6-digit code we sent you.")
-      return
-    }
-
-    setOtpError(null)
-    setPendingAction("otp-verify")
-
-    try {
-      await verifyPasswordless(otpStep.identifier, deferredOtpValue, returnTo)
-    } catch (verifyError) {
-      setPendingAction(null)
-      setOtpError(
-        verifyError instanceof Error
-          ? verifyError.message
-          : "We could not verify that code."
       )
     }
   }
@@ -169,7 +110,6 @@ export default function AuthEntryPanel() {
   async function handleGoogleAuth() {
     setPendingAction("google")
     setIdentifierError(null)
-    setOtpError(null)
 
     try {
       await loginWithGoogle(returnTo)
@@ -183,16 +123,7 @@ export default function AuthEntryPanel() {
     }
   }
 
-  function resetToIdentifierStep() {
-    setOtpError(null)
-    setOtpValue("")
-    setOtpStep(null)
-  }
-
   const intro = "Enter your phone or email"
-  const maskedDestination = otpStep
-    ? maskIdentifier(parseIdentifier(otpStep.identifier))
-    : null
 
   return (
     <div
@@ -208,129 +139,42 @@ export default function AuthEntryPanel() {
         </div>
 
         <FieldGroup>
-          {!otpStep ? (
-            <Field data-invalid={!!identifierError}>
-              <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
-                Phone or email
-              </FieldLabel>
-              <Input
-                id="identifier"
-                autoComplete="email"
-                inputMode="email"
-                value={identifierInput}
-                onChange={(event) => setIdentifierInput(event.target.value)}
-                placeholder="+91 98765 43210"
-                aria-invalid={!!identifierError}
-                className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
-              />
-              <FieldDescription className="text-[#696965]">
-                We&apos;ll send you a one-time code
-              </FieldDescription>
-              <FieldError>{identifierError}</FieldError>
-            </Field>
-          ) : (
-            <Field>
-              <FieldLabel className="text-[#1d1d1d]">One-time code</FieldLabel>
-              <div className="rounded-2xl border border-[#e3e3de] bg-[#f7f6f2] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-white p-2 text-[#1d1d1d] shadow-sm">
-                      {otpStep.channel === "sms" ? (
-                        <Smartphone className="size-4" />
-                      ) : (
-                        <Mail className="size-4" />
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <p className="text-sm font-medium text-[#151515]">
-                        Code sent to {maskedDestination}
-                      </p>
-                      <p className="text-sm text-[#666660]">
-                        Enter the 6-digit code to continue.
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={resetToIdentifierStep}
-                  >
-                    <PencilLine data-icon="inline-start" />
-                    Edit
-                  </Button>
-                </div>
-                <div className="mt-4 flex flex-col gap-3">
-                  <InputOTP
-                    maxLength={6}
-                    value={otpValue}
-                    onChange={setOtpValue}
-                    aria-invalid={!!otpError}
-                    containerClassName="justify-start"
-                    className="sr-only"
-                  >
-                    <InputOTPGroup className="gap-2 rounded-none border-none bg-transparent ring-0">
-                      {Array.from({ length: 6 }).map((_, index) => (
-                        <InputOTPSlot
-                          key={index}
-                          index={index}
-                          className="size-11 rounded-2xl border border-[#d8d8d3] bg-white text-base text-[#171717] shadow-sm first:rounded-2xl first:border first:border-[#d8d8d3] last:rounded-2xl"
-                        />
-                      ))}
-                    </InputOTPGroup>
-                  </InputOTP>
-                  {otpError ? <FieldError>{otpError}</FieldError> : null}
-                </div>
-              </div>
-            </Field>
-          )}
+          <Field data-invalid={!!identifierError}>
+            <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
+              Phone or email
+            </FieldLabel>
+            <Input
+              id="identifier"
+              autoComplete="email"
+              inputMode="email"
+              value={identifierInput}
+              onChange={(event) => setIdentifierInput(event.target.value)}
+              placeholder="+91 98765 43210"
+              aria-invalid={!!identifierError}
+              className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
+            />
+            <FieldDescription className="text-[#696965]">
+              We&apos;ll send you a one-time code on the next secure step.
+            </FieldDescription>
+            <FieldError>{identifierError}</FieldError>
+          </Field>
 
           <div className="flex flex-col gap-3">
-            {!otpStep ? (
-              <Button
-                type="button"
-                size="lg"
-                onClick={() => handleOtpStart("otp-send")}
-                disabled={!isConfigured || isLoading || pendingAction !== null}
-                className="rounded-xl"
-              >
-                {pendingAction === "otp-send" ? (
-                  <LoaderCircle data-icon="inline-start" className="animate-spin" />
-                ) : null}
-                Continue &rarr;
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleOtpVerify}
-                  disabled={
-                    !isConfigured ||
-                    isLoading ||
-                    pendingAction !== null ||
-                    deferredOtpValue.length !== 6
-                  }
-                  className="rounded-xl"
-                >
-                  {pendingAction === "otp-verify" ? (
-                    <LoaderCircle data-icon="inline-start" className="animate-spin" />
-                  ) : null}
-                  Verify code
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => handleOtpStart("otp-resend")}
-                  disabled={!isConfigured || isLoading || pendingAction !== null}
-                >
-                  {pendingAction === "otp-resend" ? (
-                    <LoaderCircle data-icon="inline-start" className="animate-spin" />
-                  ) : null}
-                  Resend code
-                </Button>
-              </>
-            )}
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleContinue}
+              disabled={!isConfigured || isLoading || pendingAction !== null}
+              className="rounded-xl"
+            >
+              {pendingAction === "continue" ? (
+                <LoaderCircle
+                  data-icon="inline-start"
+                  className="animate-spin"
+                />
+              ) : null}
+              Continue &rarr;
+            </Button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -371,8 +215,8 @@ export default function AuthEntryPanel() {
           ) : null}
 
           <p className="text-xs leading-5 text-[#6d6d66]">
-            Your phone or email is used only to deliver a one-time code through
-            Auth0&apos;s passwordless flow.
+            Your phone or email is used only to start Auth0&apos;s secure
+            passwordless login flow.
           </p>
         </FieldGroup>
 
