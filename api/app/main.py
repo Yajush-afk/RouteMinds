@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.app.core.config import settings
 from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
+from api.app.api.v1.auth import router as auth_router
 from api.app.api.v1.health import router as health_router
 from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.predictions import router as predictions_router
@@ -35,6 +36,7 @@ async def realtime_refresh_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_runtime_configuration()
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     refresh_task = asyncio.create_task(realtime_refresh_loop())
     try:
@@ -66,6 +68,7 @@ API_V1_PREFIX = "/api/v1"
 
 
 def include_api_routes(prefix: str = "") -> None:
+    app.include_router(auth_router, prefix=prefix)
     app.include_router(health_router, prefix=prefix)
     app.include_router(routes_router, prefix=prefix)
     app.include_router(predictions_router, prefix=prefix)

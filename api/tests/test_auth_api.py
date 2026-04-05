@@ -5,11 +5,17 @@ import asyncio
 from unittest.mock import MagicMock, patch
 
 import httpx
+from jwt.exceptions import ExpiredSignatureError, InvalidAudienceError, InvalidIssuerError
 from starlette.requests import Request
 
 from api.app.core.auth import (
+    authorize_claims_for_permissions,
+    extract_bearer_token,
+    extract_token_permissions,
     get_auth0_verifier,
+    normalize_token_claims,
     require_auth,
+    require_permissions,
     require_realtime_access,
 )
 from api.app.core.config import settings
@@ -20,6 +26,88 @@ from api.app.core.exceptions import (
 )
 from api.app.main import app
 from api.tests.test_prediction_api import make_segment_payload
+
+
+class StubRouteOptimizationApiService:
+    def optimize_route(
+        self,
+        origin_stop_id: str,
+        destination_stop_id: str,
+        query_timestamp_unix: int,
+    ):
+        return type(
+            "RouteResult",
+            (),
+            {
+                "stops": [
+                    {
+                        "stop_id": str(origin_stop_id),
+                        "stop_name": "Origin Stop",
+                        "stop_lat": 28.70,
+                        "stop_lon": 77.10,
+                    },
+                    {
+                        "stop_id": str(destination_stop_id),
+                        "stop_name": "Destination Stop",
+                        "stop_lat": 28.71,
+                        "stop_lon": 77.11,
+                    },
+                ],
+                "segments": [
+                    {
+                        "route_id": "R1",
+                        "from_stop_id": str(origin_stop_id),
+                        "to_stop_id": str(destination_stop_id),
+                        "stop_sequence": 1,
+                        "normalized_stop_position": 1.0,
+                        "distance_to_prev_stop_km": 1.2,
+                        "scheduled_segment_minutes": 5.0,
+                        "predicted_actual_segment_minutes": 4.5,
+                        "predicted_segment_delay_minutes": -0.5,
+                    }
+                ],
+                "total_predicted_eta_minutes": 4.5,
+            },
+        )()
+
+
+class StubRealtimeApiService:
+    def refresh_vehicle_positions(self) -> dict:
+        return {
+            "fetched_snapshots": 3,
+            "enriched_segments": 2,
+            "latest_snapshot_time": 1743494825,
+            "unmatched_snapshots": 1,
+            "unmatched_trips": 1,
+            "unmatched_vehicles": 1,
+            "malformed_records": 0,
+            "provider_format": "protobuf",
+            "auth_mode": "query",
+            "last_refresh_successful": True,
+            "last_refresh_error": None,
+        }
+
+    def get_status(self) -> dict:
+        return {
+            "configured": True,
+            "last_refresh_time": 1743494825,
+            "last_successful_refresh_time": 1743494825,
+            "latest_snapshot_time": 1743494825,
+            "fetched_snapshots": 3,
+            "enriched_segments": 2,
+            "unmatched_snapshots": 1,
+            "unmatched_trips": 1,
+            "unmatched_vehicles": 1,
+            "malformed_records": 0,
+            "cached_segments": 2,
+            "cached_vehicles": 1,
+            "cache_max_age_seconds": 300,
+            "cache_is_fresh": True,
+            "provider_format": "protobuf",
+            "auth_mode": "query",
+            "last_refresh_successful": True,
+            "last_refresh_error": None,
+        }
 
 
 class AuthDependencyTests(unittest.TestCase):
@@ -74,6 +162,61 @@ class AuthDependencyTests(unittest.TestCase):
         verifier.verify_token.assert_called_once_with("test-token")
         self.assertEqual(claims["sub"], "auth0|user-123")
 
+    def test_extract_bearer_token_rejects_malformed_authorization_header(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "headers": [(b"authorization", b"Token test-token")],
+            }
+        )
+
+        with self.assertRaises(AuthenticationException):
+            extract_bearer_token(request)
+
+    def test_require_auth_logs_malformed_authorization_header(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", b"Token test-token")],
+            }
+        )
+
+        with patch("api.app.core.auth.logger") as logger_mock:
+            with self.assertRaises(AuthenticationException):
+                asyncio.run(require_auth(request))
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("missing_or_malformed_bearer_token", logger_mock.warning.call_args[0][1])
+
+    def test_normalize_token_claims_strips_subject_scope_and_permissions(self) -> None:
+        claims = normalize_token_claims(
+            {
+                "sub": " auth0|user-123 ",
+                "scope": " route:read   realtime:manage ",
+                "permissions": [" realtime:manage ", "", " route:read "],
+            }
+        )
+
+        self.assertEqual(claims["sub"], "auth0|user-123")
+        self.assertEqual(claims["scope"], "route:read realtime:manage")
+        self.assertEqual(claims["permissions"], ["realtime:manage", "route:read"])
+
+    def test_extract_token_permissions_combines_scope_and_permissions_claims(self) -> None:
+        permissions = extract_token_permissions(
+            {
+                "scope": "route:read realtime:manage",
+                "permissions": ["route:write", "realtime:manage"],
+            }
+        )
+
+        self.assertEqual(
+            permissions,
+            {"route:read", "route:write", "realtime:manage"},
+        )
+
     def test_missing_auth0_domain_or_audience_raises_config_error(self) -> None:
         settings.AUTH0_DOMAIN = ""
         settings.AUTH0_AUDIENCE = ""
@@ -98,8 +241,108 @@ class AuthDependencyTests(unittest.TestCase):
             side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
         ):
             with self.assertRaises(AuthConfigurationException) as context:
-                asyncio.run(require_auth(request))
+                    asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 503)
+
+    def test_auth0_verifier_rejects_invalid_audience(self) -> None:
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        verifier = get_auth0_verifier()
+        signing_key = type("SigningKey", (), {"key": "public-key"})()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.return_value = signing_key
+
+            with patch(
+                "api.app.core.auth.jwt.decode",
+                side_effect=InvalidAudienceError("Invalid audience"),
+            ):
+                with self.assertRaises(AuthenticationException) as context:
+                    verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_auth0_verifier_rejects_invalid_issuer(self) -> None:
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        verifier = get_auth0_verifier()
+        signing_key = type("SigningKey", (), {"key": "public-key"})()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.return_value = signing_key
+
+            with patch(
+                "api.app.core.auth.jwt.decode",
+                side_effect=InvalidIssuerError("Invalid issuer"),
+            ):
+                with self.assertRaises(AuthenticationException) as context:
+                    verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_auth0_verifier_rejects_expired_tokens(self) -> None:
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        verifier = get_auth0_verifier()
+        signing_key = type("SigningKey", (), {"key": "public-key"})()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.return_value = signing_key
+
+            with patch(
+                "api.app.core.auth.jwt.decode",
+                side_effect=ExpiredSignatureError("Token expired"),
+            ):
+                with self.assertRaises(AuthenticationException) as context:
+                    verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_require_auth_logs_invalid_access_token_failures(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", b"Bearer invalid-token")],
+            }
+        )
+
+        verifier = MagicMock()
+        verifier.verify_token.side_effect = AuthenticationException(
+            "Invalid or expired Auth0 access token."
+        )
+
+        with patch("api.app.core.auth.get_auth0_verifier", return_value=verifier):
+            with patch("api.app.core.auth.logger") as logger_mock:
+                with self.assertRaises(AuthenticationException):
+                    asyncio.run(require_auth(request))
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("invalid_or_expired_access_token", logger_mock.warning.call_args[0][1])
+
+    def test_require_auth_logs_jwks_or_config_failures(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", b"Bearer test-token")],
+            }
+        )
+
+        with patch(
+            "api.app.core.auth.get_auth0_verifier",
+            side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
+        ):
+            with patch("api.app.core.auth.logger") as logger_mock:
+                with self.assertRaises(AuthConfigurationException):
+                    asyncio.run(require_auth(request))
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("auth_configuration_or_jwks_failure", logger_mock.warning.call_args[0][1])
 
     def test_require_realtime_access_rejects_missing_permission(self) -> None:
         settings.AUTH0_ENABLED = True
@@ -125,14 +368,82 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(scope_claims["sub"], "auth0|user")
         self.assertEqual(permission_claims["sub"], "auth0|user")
 
+    def test_require_permissions_rejects_missing_permissions(self) -> None:
+        settings.AUTH0_ENABLED = True
+        route_access_guard = require_permissions(("route:read", "route:write"))
+
+        with self.assertRaises(AuthorizationException) as context:
+            asyncio.run(route_access_guard({"sub": "auth0|user", "scope": "route:read"}))
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertIn("route:write", context.exception.message)
+
+    def test_authorize_claims_for_permissions_logs_missing_permissions(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/realtime/status",
+                "headers": [],
+            }
+        )
+
+        with patch("api.app.core.auth.logger") as logger_mock:
+            with self.assertRaises(AuthorizationException):
+                authorize_claims_for_permissions(
+                    {"sub": "auth0|user", "scope": "route:read"},
+                    ("realtime:manage",),
+                    message="You do not have permission to access realtime operational endpoints.",
+                    request=request,
+                )
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("missing_permissions", logger_mock.warning.call_args[0][1])
+
+    def test_require_permissions_accepts_permission_from_scope_or_permissions_claim(self) -> None:
+        settings.AUTH0_ENABLED = True
+        route_access_guard = require_permissions(("route:read",))
+
+        scope_claims = asyncio.run(
+            route_access_guard({"sub": "auth0|user", "scope": "route:read"})
+        )
+        permissions_claims = asyncio.run(
+            route_access_guard({"sub": "auth0|user", "permissions": ["route:read"]})
+        )
+
+        self.assertEqual(scope_claims["sub"], "auth0|user")
+        self.assertEqual(permissions_claims["sub"], "auth0|user")
+
+    def test_require_permissions_rejects_empty_permission_configuration(self) -> None:
+        settings.AUTH0_ENABLED = True
+        empty_guard = require_permissions(("", "   "))
+
+        with self.assertRaises(AuthConfigurationException) as context:
+            asyncio.run(empty_guard({"sub": "auth0|user", "scope": "route:read"}))
+
+        self.assertEqual(context.exception.status_code, 503)
+
+    def test_authorize_claims_for_permissions_accepts_valid_permissions(self) -> None:
+        settings.AUTH0_ENABLED = True
+
+        claims = authorize_claims_for_permissions(
+            {"sub": "auth0|user", "permissions": ["route:read"]},
+            ("route:read",),
+        )
+
+        self.assertEqual(claims["sub"], "auth0|user")
+
 
 class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_auth0_enabled = settings.AUTH0_ENABLED
         settings.AUTH0_ENABLED = True
+        app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
         settings.AUTH0_ENABLED = self.original_auth0_enabled
+        app.dependency_overrides.clear()
 
     async def _request(self, method: str, path: str, json_body: dict | None = None) -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
@@ -173,6 +484,108 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["predictions"]), 1)
+
+    async def test_route_optimization_endpoint_requires_authentication(self) -> None:
+        payload = {
+            "origin_stop_id": "A",
+            "destination_stop_id": "B",
+            "query_timestamp_unix": 1742803800,
+        }
+
+        response = await self._request("POST", "/api/v1/routes/optimize", payload)
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_unversioned_route_optimization_endpoint_requires_authentication(self) -> None:
+        payload = {
+            "origin_stop_id": "A",
+            "destination_stop_id": "B",
+            "query_timestamp_unix": 1742803800,
+        }
+
+        response = await self._request("POST", "/routes/optimize", payload)
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_authenticated_session_endpoint_requires_authentication(self) -> None:
+        response = await self._request("GET", "/api/v1/auth/me")
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_unversioned_authenticated_session_endpoint_requires_authentication(self) -> None:
+        response = await self._request("GET", "/auth/me")
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_authenticated_session_endpoint_returns_normalized_claims(self) -> None:
+        app.dependency_overrides[require_auth] = lambda: {
+            "sub": "auth0|contract-user",
+            "scope": "route:read realtime:manage",
+            "permissions": ["realtime:manage"],
+            "azp": "frontend-client",
+        }
+
+        response = await self._request("GET", "/api/v1/auth/me")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["subject"], "auth0|contract-user")
+        self.assertEqual(response.json()["scope"], ["route:read", "realtime:manage"])
+        self.assertEqual(
+            response.json()["permissions"],
+            ["realtime:manage", "route:read"],
+        )
+        self.assertEqual(response.json()["claims"]["azp"], "frontend-client")
+
+    async def test_route_optimization_endpoint_accepts_authenticated_requests(self) -> None:
+        app.dependency_overrides[require_auth] = lambda: {"sub": "auth0|contract-user"}
+
+        with patch(
+            "api.app.api.v1.routes.get_route_optimization_service",
+            return_value=StubRouteOptimizationApiService(),
+        ):
+            response = await self._request(
+                "POST",
+                "/api/v1/routes/optimize",
+                {
+                    "origin_stop_id": "A",
+                    "destination_stop_id": "B",
+                    "query_timestamp_unix": 1742803800,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_predicted_eta_minutes"], 4.5)
+
+    async def test_realtime_endpoints_require_permissioned_authentication(self) -> None:
+        refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+        status_response = await self._request("GET", "/api/v1/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertEqual(status_response.status_code, 401)
+
+    async def test_unversioned_realtime_endpoints_require_permissioned_authentication(self) -> None:
+        refresh_response = await self._request("POST", "/realtime/refresh")
+        status_response = await self._request("GET", "/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertEqual(status_response.status_code, 401)
+
+    async def test_realtime_endpoints_accept_requests_with_required_permission(self) -> None:
+        app.dependency_overrides[require_realtime_access] = lambda: {
+            "sub": "auth0|contract-user",
+            "permissions": ["realtime:manage"],
+        }
+
+        with patch(
+            "api.app.api.v1.realtime.get_realtime_enrichment_service",
+            return_value=StubRealtimeApiService(),
+        ):
+            refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+            status_response = await self._request("GET", "/api/v1/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertEqual(status_response.status_code, 200)
+        self.assertTrue(status_response.json()["configured"])
 
 
 if __name__ == "__main__":
