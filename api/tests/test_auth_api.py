@@ -8,8 +8,12 @@ import httpx
 from starlette.requests import Request
 
 from api.app.core.auth import (
+    extract_bearer_token,
+    extract_token_permissions,
     get_auth0_verifier,
+    normalize_token_claims,
     require_auth,
+    require_permissions,
     require_realtime_access,
 )
 from api.app.core.config import settings
@@ -156,6 +160,43 @@ class AuthDependencyTests(unittest.TestCase):
         verifier.verify_token.assert_called_once_with("test-token")
         self.assertEqual(claims["sub"], "auth0|user-123")
 
+    def test_extract_bearer_token_rejects_malformed_authorization_header(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "headers": [(b"authorization", b"Token test-token")],
+            }
+        )
+
+        with self.assertRaises(AuthenticationException):
+            extract_bearer_token(request)
+
+    def test_normalize_token_claims_strips_subject_scope_and_permissions(self) -> None:
+        claims = normalize_token_claims(
+            {
+                "sub": " auth0|user-123 ",
+                "scope": " route:read   realtime:manage ",
+                "permissions": [" realtime:manage ", "", " route:read "],
+            }
+        )
+
+        self.assertEqual(claims["sub"], "auth0|user-123")
+        self.assertEqual(claims["scope"], "route:read realtime:manage")
+        self.assertEqual(claims["permissions"], ["realtime:manage", "route:read"])
+
+    def test_extract_token_permissions_combines_scope_and_permissions_claims(self) -> None:
+        permissions = extract_token_permissions(
+            {
+                "scope": "route:read realtime:manage",
+                "permissions": ["route:write", "realtime:manage"],
+            }
+        )
+
+        self.assertEqual(
+            permissions,
+            {"route:read", "route:write", "realtime:manage"},
+        )
+
     def test_missing_auth0_domain_or_audience_raises_config_error(self) -> None:
         settings.AUTH0_DOMAIN = ""
         settings.AUTH0_AUDIENCE = ""
@@ -206,6 +247,39 @@ class AuthDependencyTests(unittest.TestCase):
 
         self.assertEqual(scope_claims["sub"], "auth0|user")
         self.assertEqual(permission_claims["sub"], "auth0|user")
+
+    def test_require_permissions_rejects_missing_permissions(self) -> None:
+        settings.AUTH0_ENABLED = True
+        route_access_guard = require_permissions(("route:read", "route:write"))
+
+        with self.assertRaises(AuthorizationException) as context:
+            asyncio.run(route_access_guard({"sub": "auth0|user", "scope": "route:read"}))
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertIn("route:write", context.exception.message)
+
+    def test_require_permissions_accepts_permission_from_scope_or_permissions_claim(self) -> None:
+        settings.AUTH0_ENABLED = True
+        route_access_guard = require_permissions(("route:read",))
+
+        scope_claims = asyncio.run(
+            route_access_guard({"sub": "auth0|user", "scope": "route:read"})
+        )
+        permissions_claims = asyncio.run(
+            route_access_guard({"sub": "auth0|user", "permissions": ["route:read"]})
+        )
+
+        self.assertEqual(scope_claims["sub"], "auth0|user")
+        self.assertEqual(permissions_claims["sub"], "auth0|user")
+
+    def test_require_permissions_rejects_empty_permission_configuration(self) -> None:
+        settings.AUTH0_ENABLED = True
+        empty_guard = require_permissions(("", "   "))
+
+        with self.assertRaises(AuthConfigurationException) as context:
+            asyncio.run(empty_guard({"sub": "auth0|user", "scope": "route:read"}))
+
+        self.assertEqual(context.exception.status_code, 503)
 
 
 class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):

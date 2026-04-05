@@ -155,6 +155,12 @@ The current backend authentication contract is:
 
 When `AUTH0_ENABLED=false`, backend auth dependencies are bypassed for local development.
 
+The backend auth dependency layer is organized around:
+
+- `require_auth` for bearer-token verification and normalized claims extraction
+- `require_permissions(...)` for reusable permission-based authorization
+- `require_realtime_access` as the realtime-specific permission guard built on top of `require_permissions(...)`
+
 ### Prediction Request Shape
 
 The segment prediction endpoint expects segment records containing:
