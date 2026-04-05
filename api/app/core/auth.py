@@ -7,18 +7,12 @@ from fastapi import Depends, Request
 from jwt import InvalidTokenError, PyJWKClient
 from jwt.exceptions import PyJWKClientError
 
-from api.app.core.config import settings
+from api.app.core.config import normalize_auth0_domain, settings
 from api.app.core.exceptions import (
     AuthConfigurationException,
     AuthenticationException,
     AuthorizationException,
 )
-
-def normalize_auth0_domain(domain: str) -> str:
-    value = domain.strip()
-    if value.startswith("https://"):
-        value = value[len("https://") :]
-    return value.rstrip("/")
 
 
 @lru_cache(maxsize=4)

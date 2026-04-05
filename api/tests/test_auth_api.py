@@ -22,6 +22,88 @@ from api.app.main import app
 from api.tests.test_prediction_api import make_segment_payload
 
 
+class StubRouteOptimizationApiService:
+    def optimize_route(
+        self,
+        origin_stop_id: str,
+        destination_stop_id: str,
+        query_timestamp_unix: int,
+    ):
+        return type(
+            "RouteResult",
+            (),
+            {
+                "stops": [
+                    {
+                        "stop_id": str(origin_stop_id),
+                        "stop_name": "Origin Stop",
+                        "stop_lat": 28.70,
+                        "stop_lon": 77.10,
+                    },
+                    {
+                        "stop_id": str(destination_stop_id),
+                        "stop_name": "Destination Stop",
+                        "stop_lat": 28.71,
+                        "stop_lon": 77.11,
+                    },
+                ],
+                "segments": [
+                    {
+                        "route_id": "R1",
+                        "from_stop_id": str(origin_stop_id),
+                        "to_stop_id": str(destination_stop_id),
+                        "stop_sequence": 1,
+                        "normalized_stop_position": 1.0,
+                        "distance_to_prev_stop_km": 1.2,
+                        "scheduled_segment_minutes": 5.0,
+                        "predicted_actual_segment_minutes": 4.5,
+                        "predicted_segment_delay_minutes": -0.5,
+                    }
+                ],
+                "total_predicted_eta_minutes": 4.5,
+            },
+        )()
+
+
+class StubRealtimeApiService:
+    def refresh_vehicle_positions(self) -> dict:
+        return {
+            "fetched_snapshots": 3,
+            "enriched_segments": 2,
+            "latest_snapshot_time": 1743494825,
+            "unmatched_snapshots": 1,
+            "unmatched_trips": 1,
+            "unmatched_vehicles": 1,
+            "malformed_records": 0,
+            "provider_format": "protobuf",
+            "auth_mode": "query",
+            "last_refresh_successful": True,
+            "last_refresh_error": None,
+        }
+
+    def get_status(self) -> dict:
+        return {
+            "configured": True,
+            "last_refresh_time": 1743494825,
+            "last_successful_refresh_time": 1743494825,
+            "latest_snapshot_time": 1743494825,
+            "fetched_snapshots": 3,
+            "enriched_segments": 2,
+            "unmatched_snapshots": 1,
+            "unmatched_trips": 1,
+            "unmatched_vehicles": 1,
+            "malformed_records": 0,
+            "cached_segments": 2,
+            "cached_vehicles": 1,
+            "cache_max_age_seconds": 300,
+            "cache_is_fresh": True,
+            "provider_format": "protobuf",
+            "auth_mode": "query",
+            "last_refresh_successful": True,
+            "last_refresh_error": None,
+        }
+
+
 class AuthDependencyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.original_auth0_enabled = settings.AUTH0_ENABLED
@@ -130,9 +212,11 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_auth0_enabled = settings.AUTH0_ENABLED
         settings.AUTH0_ENABLED = True
+        app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
         settings.AUTH0_ENABLED = self.original_auth0_enabled
+        app.dependency_overrides.clear()
 
     async def _request(self, method: str, path: str, json_body: dict | None = None) -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
@@ -173,6 +257,79 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["predictions"]), 1)
+
+    async def test_route_optimization_endpoint_requires_authentication(self) -> None:
+        payload = {
+            "origin_stop_id": "A",
+            "destination_stop_id": "B",
+            "query_timestamp_unix": 1742803800,
+        }
+
+        response = await self._request("POST", "/api/v1/routes/optimize", payload)
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_unversioned_route_optimization_endpoint_requires_authentication(self) -> None:
+        payload = {
+            "origin_stop_id": "A",
+            "destination_stop_id": "B",
+            "query_timestamp_unix": 1742803800,
+        }
+
+        response = await self._request("POST", "/routes/optimize", payload)
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_route_optimization_endpoint_accepts_authenticated_requests(self) -> None:
+        app.dependency_overrides[require_auth] = lambda: {"sub": "auth0|contract-user"}
+
+        with patch(
+            "api.app.api.v1.routes.get_route_optimization_service",
+            return_value=StubRouteOptimizationApiService(),
+        ):
+            response = await self._request(
+                "POST",
+                "/api/v1/routes/optimize",
+                {
+                    "origin_stop_id": "A",
+                    "destination_stop_id": "B",
+                    "query_timestamp_unix": 1742803800,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total_predicted_eta_minutes"], 4.5)
+
+    async def test_realtime_endpoints_require_permissioned_authentication(self) -> None:
+        refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+        status_response = await self._request("GET", "/api/v1/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertEqual(status_response.status_code, 401)
+
+    async def test_unversioned_realtime_endpoints_require_permissioned_authentication(self) -> None:
+        refresh_response = await self._request("POST", "/realtime/refresh")
+        status_response = await self._request("GET", "/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertEqual(status_response.status_code, 401)
+
+    async def test_realtime_endpoints_accept_requests_with_required_permission(self) -> None:
+        app.dependency_overrides[require_realtime_access] = lambda: {
+            "sub": "auth0|contract-user",
+            "permissions": ["realtime:manage"],
+        }
+
+        with patch(
+            "api.app.api.v1.realtime.get_realtime_enrichment_service",
+            return_value=StubRealtimeApiService(),
+        ):
+            refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+            status_response = await self._request("GET", "/api/v1/realtime/status")
+
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertEqual(status_response.status_code, 200)
+        self.assertTrue(status_response.json()["configured"])
 
 
 if __name__ == "__main__":

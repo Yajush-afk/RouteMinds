@@ -35,6 +35,7 @@ async def realtime_refresh_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_runtime_configuration()
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     refresh_task = asyncio.create_task(realtime_refresh_loop())
     try:
