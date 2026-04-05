@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import logging
 from typing import Any, Callable, TypeAlias
 
 import jwt
@@ -18,6 +19,39 @@ from api.app.core.exceptions import (
 
 TokenClaims: TypeAlias = dict[str, Any]
 PermissionResolver: TypeAlias = Callable[[], tuple[str, ...]]
+
+logger = logging.getLogger(__name__)
+
+
+def describe_request(request: Request | None) -> str:
+    if request is None:
+        return "<unknown-request>"
+    return f"{request.method} {request.url.path}"
+
+
+def log_auth_warning(
+    event: str,
+    *,
+    request: Request | None = None,
+    subject: str | None = None,
+    detail: str | None = None,
+    required_permissions: tuple[str, ...] | None = None,
+    token_permissions: set[str] | None = None,
+) -> None:
+    message_parts = [f"event={event}", f"request={describe_request(request)}"]
+    if subject:
+        message_parts.append(f"subject={subject}")
+    if detail:
+        message_parts.append(f"detail={detail}")
+    if required_permissions:
+        message_parts.append(
+            "required_permissions=" + ",".join(sorted(required_permissions))
+        )
+    if token_permissions is not None:
+        message_parts.append(
+            "token_permissions=" + ",".join(sorted(token_permissions))
+        )
+    logger.warning("Auth warning: %s", " | ".join(message_parts))
 
 
 @lru_cache(maxsize=4)
@@ -117,6 +151,49 @@ def normalize_required_permissions(required_permissions: tuple[str, ...]) -> tup
     return normalized_permissions
 
 
+def authorize_claims_for_permissions(
+    claims: TokenClaims,
+    required_permissions: tuple[str, ...] | PermissionResolver,
+    *,
+    message: str | None = None,
+    request: Request | None = None,
+) -> TokenClaims:
+    if not settings.AUTH0_ENABLED:
+        return claims
+
+    normalized_permissions = resolve_required_permissions(required_permissions)
+    token_permissions = extract_token_permissions(claims)
+    missing_permissions = [
+        permission
+        for permission in normalized_permissions
+        if permission not in token_permissions
+    ]
+
+    if missing_permissions:
+        subject = str(claims.get("sub") or "")
+        log_auth_warning(
+            "missing_permissions",
+            request=request,
+            subject=subject or None,
+            detail=message,
+            required_permissions=normalized_permissions,
+            token_permissions=token_permissions,
+        )
+        if message is not None:
+            raise AuthorizationException(message)
+        if len(missing_permissions) == 1:
+            raise AuthorizationException(
+                f"You do not have the required permission: {missing_permissions[0]}."
+            )
+        raise AuthorizationException(
+            "You do not have the required permissions: "
+            + ", ".join(missing_permissions)
+            + "."
+        )
+
+    return claims
+
+
 def get_realtime_required_permissions() -> tuple[str, ...]:
     required_permission = settings.AUTH0_REALTIME_REQUIRED_PERMISSION.strip()
     if not required_permission:
@@ -141,32 +218,14 @@ def require_permissions(
 ):
     async def dependency(
         claims: TokenClaims = Depends(require_auth),
+        request: Request | None = None,
     ) -> TokenClaims:
-        if not settings.AUTH0_ENABLED:
-            return claims
-
-        normalized_permissions = resolve_required_permissions(required_permissions)
-        token_permissions = extract_token_permissions(claims)
-        missing_permissions = [
-            permission
-            for permission in normalized_permissions
-            if permission not in token_permissions
-        ]
-
-        if missing_permissions:
-            if message is not None:
-                raise AuthorizationException(message)
-            if len(missing_permissions) == 1:
-                raise AuthorizationException(
-                    f"You do not have the required permission: {missing_permissions[0]}."
-                )
-            raise AuthorizationException(
-                "You do not have the required permissions: "
-                + ", ".join(missing_permissions)
-                + "."
-            )
-
-        return claims
+        return authorize_claims_for_permissions(
+            claims,
+            required_permissions,
+            message=message,
+            request=request,
+        )
 
     return dependency
 
@@ -191,8 +250,33 @@ async def require_auth(
     if not settings.AUTH0_ENABLED:
         return {"sub": "auth-disabled"}
 
-    verifier = get_auth0_verifier()
-    return normalize_token_claims(verifier.verify_token(extract_bearer_token(request)))
+    try:
+        token = extract_bearer_token(request)
+    except AuthenticationException:
+        log_auth_warning(
+            "missing_or_malformed_bearer_token",
+            request=request,
+            detail="Authorization header must contain a Bearer token.",
+        )
+        raise
+
+    try:
+        verifier = get_auth0_verifier()
+        return normalize_token_claims(verifier.verify_token(token))
+    except AuthenticationException as exc:
+        log_auth_warning(
+            "invalid_or_expired_access_token",
+            request=request,
+            detail=exc.message,
+        )
+        raise
+    except AuthConfigurationException as exc:
+        log_auth_warning(
+            "auth_configuration_or_jwks_failure",
+            request=request,
+            detail=exc.message,
+        )
+        raise
 
 
 def extract_token_permissions(claims: TokenClaims) -> set[str]:
