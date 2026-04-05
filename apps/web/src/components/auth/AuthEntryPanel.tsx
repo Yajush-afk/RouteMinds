@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { motion, useReducedMotion } from "motion/react"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { useRouteMindsAuth } from "@/auth/Auth0ProviderWithNavigate"
@@ -77,6 +78,7 @@ export default function AuthEntryPanel() {
   } = useRouteMindsAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const prefersReducedMotion = useReducedMotion()
   const [identifierInput, setIdentifierInput] = useState("")
   const [identifierError, setIdentifierError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<
@@ -124,10 +126,19 @@ export default function AuthEntryPanel() {
   }
 
   const intro = "Enter your phone or email"
+  const pressProps = prefersReducedMotion
+    ? {}
+    : {
+        whileTap: { scale: 0.985, y: 1 },
+        transition: {
+          duration: 0.12,
+          ease: "easeOut" as const,
+        },
+      }
 
   return (
     <div
-      className="flex flex-col justify-center bg-white px-8 py-14 text-slate-900 sm:px-12 sm:py-16"
+      className="flex flex-col justify-center border border-white/70 bg-white px-8 py-14 text-slate-900 shadow-[0_24px_60px_rgba(37,28,18,0.12)] sm:px-12 sm:py-16"
       style={{ fontFamily: "'Poppins', sans-serif" }}
     >
       <div className="mx-auto w-full max-w-sm">
@@ -161,19 +172,22 @@ export default function AuthEntryPanel() {
 
           <div className="flex flex-col gap-3">
             <Button
+              asChild
               type="button"
               size="lg"
               onClick={handleContinue}
               disabled={!isConfigured || isLoading || pendingAction !== null}
-              className="rounded-xl"
+              className="cursor-pointer rounded-xl"
             >
-              {pendingAction === "continue" ? (
-                <LoaderCircle
-                  data-icon="inline-start"
-                  className="animate-spin"
-                />
-              ) : null}
-              Continue &rarr;
+              <motion.button {...pressProps}>
+                {pendingAction === "continue" ? (
+                  <LoaderCircle
+                    data-icon="inline-start"
+                    className="animate-spin"
+                  />
+                ) : null}
+                Continue &rarr;
+              </motion.button>
             </Button>
           </div>
 
@@ -184,19 +198,25 @@ export default function AuthEntryPanel() {
           </div>
 
           <Button
+            asChild
             type="button"
             variant="outline"
             size="lg"
             onClick={handleGoogleAuth}
             disabled={!isConfigured || isLoading || pendingAction !== null}
-            className="rounded-xl"
+            className="cursor-pointer rounded-xl border-[#cfcfc8] bg-white text-[#151515] shadow-[inset_0_0_0_1px_rgba(207,207,200,0.95)] hover:border-[#bdbdb5] hover:bg-[#f8f8f6] hover:text-[#151515]"
           >
-            {pendingAction === "google" ? (
-              <LoaderCircle data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <GoogleIcon />
-            )}
-            Continue with Google
+            <motion.button {...pressProps}>
+              {pendingAction === "google" ? (
+                <LoaderCircle
+                  data-icon="inline-start"
+                  className="animate-spin"
+                />
+              ) : (
+                <GoogleIcon />
+              )}
+              Continue with Google
+            </motion.button>
           </Button>
 
           {configError ? (
