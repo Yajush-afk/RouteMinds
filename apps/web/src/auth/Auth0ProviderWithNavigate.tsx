@@ -1,4 +1,4 @@
-import auth0 from "auth0-js"
+import { Auth0Provider, type AppState, useAuth0 } from "@auth0/auth0-react"
 import {
   createContext,
   type ReactNode,
@@ -6,17 +6,12 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
 } from "react"
 import { useNavigate } from "react-router-dom"
 
-import type { AuthResult, Auth0Error } from "auth0-js"
-
 import { getAuth0Config, getAuth0ConfigError } from "@/auth/auth0-config"
-import {
-  parseIdentifier,
-  type ParsedIdentifier,
-} from "@/auth/identifier"
+import { parseIdentifier } from "@/auth/identifier"
+import { setApiAccessTokenFactory } from "@/lib/api/client"
 
 type Props = {
   children: ReactNode
@@ -29,11 +24,6 @@ type AuthUser = {
   sub?: string
 }
 
-type PasswordlessStartResult = {
-  channel: ParsedIdentifier["kind"]
-  identifier: string
-}
-
 type RouteMindsAuthContextValue = {
   isConfigured: boolean
   configError: string | null
@@ -42,35 +32,45 @@ type RouteMindsAuthContextValue = {
   error: Error | null
   user: AuthUser | null
   getAccessToken: () => Promise<string>
-  startPasswordless: (
-    identifier: string,
-    returnTo: string
-  ) => Promise<PasswordlessStartResult>
-  verifyPasswordless: (
-    identifier: string,
-    code: string,
-    returnTo: string
-  ) => Promise<void>
+  startPasswordless: (identifier: string, returnTo: string) => Promise<void>
   loginWithGoogle: (returnTo: string) => Promise<void>
   logout: () => void
 }
 
-type StoredSession = {
-  accessToken: string
-  expiresAt: number
-  idToken?: string | null
-  scope?: string | null
-  tokenType?: string | null
-  user: AuthUser | null
+type AuthUserShape = {
+  email?: string
+  name?: string
+  picture?: string
+  sub?: string
 }
 
-const AUTH_SESSION_STORAGE_KEY = "routeminds.auth.session"
+type RouteMindsAppState = AppState & {
+  returnTo?: string
+}
 
 const RouteMindsAuthContext = createContext<RouteMindsAuthContextValue | null>(
   null
 )
 
-function toAuthError(error: Auth0Error | Error | null | undefined) {
+function getReturnTo(appState?: RouteMindsAppState) {
+  const returnTo = appState?.returnTo?.trim() || "/"
+  return returnTo.startsWith("/") ? returnTo : "/"
+}
+
+function toAuthUser(user: AuthUserShape | undefined): AuthUser | null {
+  if (!user) {
+    return null
+  }
+
+  return {
+    email: user.email,
+    name: user.name,
+    picture: user.picture,
+    sub: user.sub,
+  }
+}
+
+function toAuthError(error: unknown) {
   if (!error) {
     return null
   }
@@ -79,79 +79,7 @@ function toAuthError(error: Auth0Error | Error | null | undefined) {
     return error
   }
 
-  return new Error(
-    error.description ||
-      error.errorDescription ||
-      error.message ||
-      error.error ||
-      "Authentication failed."
-  )
-}
-
-function toStoredSession(result: AuthResult): StoredSession | null {
-  if (!result.accessToken || !result.expiresIn) {
-    return null
-  }
-
-  return {
-    accessToken: result.accessToken,
-    expiresAt: Date.now() + result.expiresIn * 1000,
-    idToken: result.idToken ?? null,
-    scope: result.scope ?? null,
-    tokenType: result.tokenType ?? null,
-    user: result.idTokenPayload
-      ? {
-          email: result.idTokenPayload.email,
-          name: result.idTokenPayload.name,
-          picture: result.idTokenPayload.picture,
-          sub: result.idTokenPayload.sub,
-        }
-      : null,
-  }
-}
-
-function readStoredSession() {
-  const raw = sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY)
-
-  if (!raw) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as StoredSession
-    if (parsed.expiresAt <= Date.now() || !parsed.accessToken) {
-      sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
-      return null
-    }
-
-    return parsed
-  } catch {
-    sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
-    return null
-  }
-}
-
-function storeSession(session: StoredSession | null) {
-  if (!session) {
-    sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
-    return
-  }
-
-  sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session))
-}
-
-function getReturnTo(appState: unknown) {
-  if (
-    appState &&
-    typeof appState === "object" &&
-    "returnTo" in appState &&
-    typeof appState.returnTo === "string" &&
-    appState.returnTo
-  ) {
-    return appState.returnTo
-  }
-
-  return "/"
+  return new Error("Authentication failed.")
 }
 
 function createUnavailableAuthValue(
@@ -159,15 +87,11 @@ function createUnavailableAuthValue(
 ): RouteMindsAuthContextValue {
   const error = new Error(message)
 
-  async function rejectVoid() {
+  async function rejectVoid(): Promise<void> {
     throw error
   }
 
   async function rejectString(): Promise<string> {
-    throw error
-  }
-
-  async function rejectPasswordlessStart(): Promise<PasswordlessStartResult> {
     throw error
   }
 
@@ -179,226 +103,150 @@ function createUnavailableAuthValue(
     error: null,
     user: null,
     getAccessToken: rejectString,
-    startPasswordless: rejectPasswordlessStart,
-    verifyPasswordless: rejectVoid,
+    startPasswordless: rejectVoid,
     loginWithGoogle: rejectVoid,
     logout() {},
   }
+}
+
+function AuthStateBridge({
+  children,
+  config,
+}: Props & { config: NonNullable<ReturnType<typeof getAuth0Config>> }) {
+  const {
+    error,
+    getAccessTokenSilently,
+    isAuthenticated,
+    isLoading,
+    loginWithRedirect,
+    logout: auth0Logout,
+    user,
+  } = useAuth0()
+
+  const getAccessToken = useCallback(async () => {
+    return getAccessTokenSilently({
+      authorizationParams: {
+        audience: config.audience,
+        scope: config.scope,
+      },
+    })
+  }, [config.audience, config.scope, getAccessTokenSilently])
+
+  useEffect(() => {
+    setApiAccessTokenFactory(() =>
+      getAccessTokenSilently({
+        authorizationParams: {
+          audience: config.audience,
+          scope: config.scope,
+        },
+      })
+    )
+
+    return () => {
+      setApiAccessTokenFactory(null)
+    }
+  }, [config.audience, config.scope, getAccessTokenSilently])
+
+  const startPasswordless = useCallback<
+    RouteMindsAuthContextValue["startPasswordless"]
+  >(
+    async (rawIdentifier, returnTo) => {
+      const identifier = parseIdentifier(rawIdentifier)
+
+      await loginWithRedirect({
+        appState: { returnTo },
+        authorizationParams: {
+          audience: config.audience,
+          connection:
+            identifier.kind === "email"
+              ? config.emailConnection
+              : config.smsConnection,
+          login_hint: identifier.value,
+          redirect_uri: config.redirectUri,
+          scope: config.scope,
+        },
+      })
+    },
+    [
+      config.audience,
+      config.emailConnection,
+      config.redirectUri,
+      config.scope,
+      config.smsConnection,
+      loginWithRedirect,
+    ]
+  )
+
+  const loginWithGoogle = useCallback<
+    RouteMindsAuthContextValue["loginWithGoogle"]
+  >(
+    async (returnTo) => {
+      await loginWithRedirect({
+        appState: { returnTo },
+        authorizationParams: {
+          audience: config.audience,
+          ...(config.googleConnection
+            ? { connection: config.googleConnection }
+            : {}),
+          redirect_uri: config.redirectUri,
+          scope: config.scope,
+        },
+      })
+    },
+    [
+      config.audience,
+      config.googleConnection,
+      config.redirectUri,
+      config.scope,
+      loginWithRedirect,
+    ]
+  )
+
+  const logout = useCallback(() => {
+    setApiAccessTokenFactory(null)
+    auth0Logout({
+      logoutParams: {
+        returnTo: window.location.origin,
+      },
+    })
+  }, [auth0Logout])
+
+  const value = useMemo<RouteMindsAuthContextValue>(
+    () => ({
+      isConfigured: true,
+      configError: null,
+      isAuthenticated,
+      isLoading,
+      error: toAuthError(error),
+      user: toAuthUser(user as AuthUserShape | undefined),
+      getAccessToken,
+      startPasswordless,
+      loginWithGoogle,
+      logout,
+    }),
+    [
+      error,
+      getAccessToken,
+      isAuthenticated,
+      isLoading,
+      loginWithGoogle,
+      logout,
+      startPasswordless,
+      user,
+    ]
+  )
+
+  return (
+    <RouteMindsAuthContext.Provider value={value}>
+      {children}
+    </RouteMindsAuthContext.Provider>
+  )
 }
 
 export default function Auth0ProviderWithNavigate({ children }: Props) {
   const navigate = useNavigate()
   const config = getAuth0Config()
   const configError = getAuth0ConfigError()
-  const [error, setError] = useState<Error | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [session, setSession] = useState<StoredSession | null>(null)
-
-  const webAuth = useMemo(() => {
-    if (!config) {
-      return null
-    }
-
-    return new auth0.WebAuth({
-      domain: config.domain,
-      clientID: config.clientId,
-      redirectUri: config.redirectUri,
-      responseType: "token id_token",
-      scope: config.scope,
-      ...(config.audience ? { audience: config.audience } : {}),
-    })
-  }, [config])
-
-  const resetError = useCallback(() => {
-    setError(null)
-  }, [])
-
-  const commitSession = useCallback((nextSession: StoredSession | null) => {
-    setSession(nextSession)
-    storeSession(nextSession)
-  }, [])
-
-  useEffect(() => {
-    if (!webAuth) {
-      setIsLoading(false)
-      return
-    }
-
-    const hash = window.location.hash
-    const hasAuthResponse =
-      hash.includes("access_token") ||
-      hash.includes("id_token") ||
-      hash.includes("error=")
-
-    if (hasAuthResponse) {
-      webAuth.parseHash({ hash }, (parseError, result) => {
-        const nextError = toAuthError(parseError)
-
-        if (nextError) {
-          resetError()
-          commitSession(null)
-          setError(nextError)
-          setIsLoading(false)
-          window.history.replaceState(
-            {},
-            document.title,
-            `${window.location.pathname}${window.location.search}`
-          )
-          return
-        }
-
-        const nextSession = result ? toStoredSession(result) : null
-
-        if (!nextSession) {
-          commitSession(null)
-          setError(new Error("Authentication response did not contain a valid session."))
-          setIsLoading(false)
-          return
-        }
-
-        resetError()
-        commitSession(nextSession)
-        setIsLoading(false)
-        navigate(getReturnTo(result?.appState), { replace: true })
-      })
-      return
-    }
-
-    const storedSession = readStoredSession()
-    commitSession(storedSession)
-    setIsLoading(false)
-  }, [commitSession, navigate, resetError, webAuth])
-
-  const startPasswordless = useCallback<RouteMindsAuthContextValue["startPasswordless"]>(
-    async (rawIdentifier) => {
-      if (!webAuth || !config) {
-        throw new Error(configError ?? "Auth0 configuration is unavailable.")
-      }
-
-      resetError()
-
-      const identifier = parseIdentifier(rawIdentifier)
-
-      await new Promise<void>((resolve, reject) => {
-        webAuth.passwordlessStart(
-          {
-            connection:
-              identifier.kind === "email"
-                ? config.emailConnection
-                : config.smsConnection,
-            send: "code",
-            ...(identifier.kind === "email"
-              ? { email: identifier.value }
-              : { phoneNumber: identifier.value }),
-            authParams: {
-              scope: config.scope,
-              ...(config.audience ? { audience: config.audience } : {}),
-            },
-          },
-          (startError) => {
-            const nextError = toAuthError(startError)
-            if (nextError) {
-              reject(nextError)
-              return
-            }
-
-            resolve()
-          }
-        )
-      })
-
-      return {
-        channel: identifier.kind,
-        identifier: identifier.value,
-      }
-    },
-    [config, configError, resetError, webAuth]
-  )
-
-  const verifyPasswordless = useCallback<RouteMindsAuthContextValue["verifyPasswordless"]>(
-    async (rawIdentifier, code, returnTo) => {
-      if (!webAuth || !config) {
-        throw new Error(configError ?? "Auth0 configuration is unavailable.")
-      }
-
-      resetError()
-      const identifier = parseIdentifier(rawIdentifier)
-
-      await new Promise<void>((resolve, reject) => {
-        webAuth.passwordlessLogin(
-          {
-            connection:
-              identifier.kind === "email"
-                ? config.emailConnection
-                : config.smsConnection,
-            verificationCode: code,
-            ...(identifier.kind === "email"
-              ? { email: identifier.value }
-              : { phoneNumber: identifier.value }),
-            appState: { returnTo },
-            onRedirecting(done) {
-              done()
-              resolve()
-            },
-          },
-          (loginError) => {
-            const nextError = toAuthError(loginError)
-            if (nextError) {
-              reject(nextError)
-            }
-          }
-        )
-      })
-    },
-    [config, configError, resetError, webAuth]
-  )
-
-  const loginWithGoogle = useCallback<RouteMindsAuthContextValue["loginWithGoogle"]>(
-    async (returnTo) => {
-      if (!webAuth || !config) {
-        throw new Error(configError ?? "Auth0 configuration is unavailable.")
-      }
-
-      resetError()
-      webAuth.authorize({
-        ...(config.googleConnection
-          ? { connection: config.googleConnection }
-          : {}),
-        appState: { returnTo },
-      })
-    },
-    [config, configError, resetError, webAuth]
-  )
-
-  const logout = useCallback(() => {
-    commitSession(null)
-    resetError()
-
-    if (!webAuth || !config) {
-      navigate("/", { replace: true })
-      return
-    }
-
-    webAuth.logout({
-      clientID: config.clientId,
-      returnTo: window.location.origin,
-    })
-  }, [commitSession, config, navigate, resetError, webAuth])
-
-  const getAccessToken = useCallback<RouteMindsAuthContextValue["getAccessToken"]>(
-    async () => {
-      const currentSession = readStoredSession()
-
-      if (!currentSession) {
-        commitSession(null)
-        throw new Error("No authenticated session is available.")
-      }
-
-      commitSession(currentSession)
-      return currentSession.accessToken
-    },
-    [commitSession]
-  )
 
   if (!config) {
     return (
@@ -413,23 +261,22 @@ export default function Auth0ProviderWithNavigate({ children }: Props) {
   }
 
   return (
-    <RouteMindsAuthContext.Provider
-      value={{
-        isConfigured: true,
-        configError: null,
-        isAuthenticated: !!session,
-        isLoading,
-        error,
-        user: session?.user ?? null,
-        getAccessToken,
-        startPasswordless,
-        verifyPasswordless,
-        loginWithGoogle,
-        logout,
+    <Auth0Provider
+      domain={config.domain}
+      clientId={config.clientId}
+      authorizationParams={{
+        audience: config.audience,
+        redirect_uri: config.redirectUri,
+        scope: config.scope,
+      }}
+      onRedirectCallback={(appState) => {
+        navigate(getReturnTo(appState as RouteMindsAppState), {
+          replace: true,
+        })
       }}
     >
-      {children}
-    </RouteMindsAuthContext.Provider>
+      <AuthStateBridge config={config}>{children}</AuthStateBridge>
+    </Auth0Provider>
   )
 }
 
