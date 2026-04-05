@@ -132,6 +132,7 @@ This model is used by the backend to estimate segment travel cost during route o
 
 The FastAPI app exposes the following routes under `/api/v1`:
 
+- `GET /api/v1/auth/me`
 - `GET /api/v1/health`
 - `POST /api/v1/predictions/segments`
 - `POST /api/v1/routes/optimize`
@@ -141,12 +142,13 @@ The FastAPI app exposes the following routes under `/api/v1`:
 There is also a root route at `GET /` that returns app metadata and a docs pointer.
 
 The backend also exposes unversioned aliases for the current API surface such as
-`/health`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
+`/auth/me`, `/health`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
 
 ### Authentication Contract
 
 The current backend authentication contract is:
 
+- authenticated: `GET /auth/me`, `GET /api/v1/auth/me`
 - public: `GET /health`, `GET /api/v1/health`
 - public: `POST /predictions/segments`, `POST /api/v1/predictions/segments`
 - authenticated: `POST /routes/optimize`, `POST /api/v1/routes/optimize`
@@ -154,6 +156,8 @@ The current backend authentication contract is:
 - authenticated plus `realtime:manage`: `POST /realtime/refresh`, `POST /api/v1/realtime/refresh`
 
 When `AUTH0_ENABLED=false`, backend auth dependencies are bypassed for local development.
+
+`GET /auth/me` is the backend diagnostic endpoint for verifying that a caller is authenticated and inspecting the normalized claims, scopes, and permissions seen by the API.
 
 The backend auth dependency layer is organized around:
 

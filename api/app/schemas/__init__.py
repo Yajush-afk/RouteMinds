@@ -1,3 +1,4 @@
+from api.app.schemas.auth import AuthSessionResponse
 from api.app.schemas.predictions import (
     SegmentFeatureRecord,
     SegmentPrediction,
@@ -13,6 +14,7 @@ from api.app.schemas.routes import (
 )
 
 __all__ = [
+    "AuthSessionResponse",
     "SegmentFeatureRecord",
     "SegmentPrediction",
     "SegmentPredictionRequest",

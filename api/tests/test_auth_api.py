@@ -354,6 +354,35 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    async def test_authenticated_session_endpoint_requires_authentication(self) -> None:
+        response = await self._request("GET", "/api/v1/auth/me")
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_unversioned_authenticated_session_endpoint_requires_authentication(self) -> None:
+        response = await self._request("GET", "/auth/me")
+
+        self.assertEqual(response.status_code, 401)
+
+    async def test_authenticated_session_endpoint_returns_normalized_claims(self) -> None:
+        app.dependency_overrides[require_auth] = lambda: {
+            "sub": "auth0|contract-user",
+            "scope": "route:read realtime:manage",
+            "permissions": ["realtime:manage"],
+            "azp": "frontend-client",
+        }
+
+        response = await self._request("GET", "/api/v1/auth/me")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["subject"], "auth0|contract-user")
+        self.assertEqual(response.json()["scope"], ["route:read", "realtime:manage"])
+        self.assertEqual(
+            response.json()["permissions"],
+            ["realtime:manage", "route:read"],
+        )
+        self.assertEqual(response.json()["claims"]["azp"], "frontend-client")
+
     async def test_route_optimization_endpoint_accepts_authenticated_requests(self) -> None:
         app.dependency_overrides[require_auth] = lambda: {"sub": "auth0|contract-user"}
 
