@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 def describe_request(request: Request | None) -> str:
     if request is None:
         return "<unknown-request>"
-    return f"{request.method} {request.url.path}"
+    method = request.scope.get("method") or "<unknown-method>"
+    path = request.scope.get("path") or request.scope.get("root_path") or "<unknown-path>"
+    return f"{method} {path}"
 
 
 def log_auth_warning(
@@ -218,7 +220,7 @@ def require_permissions(
 ):
     async def dependency(
         claims: TokenClaims = Depends(require_auth),
-        request: Request | None = None,
+        request: Request = None,
     ) -> TokenClaims:
         return authorize_claims_for_permissions(
             claims,

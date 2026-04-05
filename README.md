@@ -165,6 +165,8 @@ The backend auth dependency layer is organized around:
 - `require_permissions(...)` for reusable permission-based authorization
 - `require_realtime_access` as the realtime-specific permission guard built on top of `require_permissions(...)`
 
+Auth failures are logged with safe metadata only. The backend records the request path, auth event type, subject when available, and missing permissions when relevant. Raw bearer tokens are never logged.
+
 ### Prediction Request Shape
 
 The segment prediction endpoint expects segment records containing:
@@ -347,6 +349,41 @@ Backend tests live in `api/tests/` and currently cover:
 - GTFS graph construction
 - route optimization API behavior
 - real-time enrichment API behavior
+- Auth0 configuration validation
+- auth dependency behavior, including malformed bearer headers, invalid audience, invalid issuer, expired tokens, and permission failures
+
+Auth-focused test commands:
+
+```bash
+conda run -n route_minds python -m unittest api.tests.test_config
+conda run -n route_minds python -m unittest api.tests.test_auth_api
+conda run -n route_minds python -m unittest api.tests.test_route_optimization_api
+conda run -n route_minds python -m unittest api.tests.test_realtime_enrichment_api
+```
+
+Optional live Auth0 verification is available through an environment-gated integration test:
+
+```bash
+export ROUTEMINDS_AUTH0_TEST_BASE_URL=http://127.0.0.1:8000
+export ROUTEMINDS_AUTH0_TEST_ACCESS_TOKEN=<valid access token>
+export ROUTEMINDS_AUTH0_TEST_REALTIME_TOKEN=<token with realtime:manage>
+export ROUTEMINDS_AUTH0_TEST_INVALID_TOKEN=<known invalid token>
+conda run -n route_minds python -m unittest api.tests.test_auth0_live_integration
+```
+
+Only `ROUTEMINDS_AUTH0_TEST_BASE_URL` and `ROUTEMINDS_AUTH0_TEST_ACCESS_TOKEN` are required to enable the live suite. The realtime and invalid-token checks are skipped unless those extra variables are set.
+
+## Auth Rollout
+
+Recommended rollout sequence for backend Auth0 enforcement:
+
+1. Set and validate all Auth0 env vars in a development environment.
+2. Start the backend and confirm `/health` stays public.
+3. Verify `/auth/me` returns `401` without a token and `200` with a valid token.
+4. Verify `/routes/optimize` returns `401` without a token and succeeds with a valid authenticated token.
+5. Verify `/realtime/status` and `/realtime/refresh` return `403` for tokens missing `realtime:manage` and `200` for tokens that include it.
+6. Run the local auth-focused unit suites and, when tenant credentials are available, the live Auth0 integration suite.
+7. Promote the same environment contract to your shared or production environment, limiting `CORS_ALLOW_ORIGINS` to deployed frontend origins only.
 
 ## Implementation Notes
 

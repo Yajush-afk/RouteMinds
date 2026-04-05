@@ -5,6 +5,7 @@ import asyncio
 from unittest.mock import MagicMock, patch
 
 import httpx
+from jwt.exceptions import ExpiredSignatureError, InvalidAudienceError, InvalidIssuerError
 from starlette.requests import Request
 
 from api.app.core.auth import (
@@ -240,8 +241,62 @@ class AuthDependencyTests(unittest.TestCase):
             side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
         ):
             with self.assertRaises(AuthConfigurationException) as context:
-                asyncio.run(require_auth(request))
+                    asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 503)
+
+    def test_auth0_verifier_rejects_invalid_audience(self) -> None:
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        verifier = get_auth0_verifier()
+        signing_key = type("SigningKey", (), {"key": "public-key"})()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.return_value = signing_key
+
+            with patch(
+                "api.app.core.auth.jwt.decode",
+                side_effect=InvalidAudienceError("Invalid audience"),
+            ):
+                with self.assertRaises(AuthenticationException) as context:
+                    verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_auth0_verifier_rejects_invalid_issuer(self) -> None:
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        verifier = get_auth0_verifier()
+        signing_key = type("SigningKey", (), {"key": "public-key"})()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.return_value = signing_key
+
+            with patch(
+                "api.app.core.auth.jwt.decode",
+                side_effect=InvalidIssuerError("Invalid issuer"),
+            ):
+                with self.assertRaises(AuthenticationException) as context:
+                    verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_auth0_verifier_rejects_expired_tokens(self) -> None:
+        settings.AUTH0_DOMAIN = "tenant.auth0.com"
+        settings.AUTH0_AUDIENCE = "routeminds-api"
+        verifier = get_auth0_verifier()
+        signing_key = type("SigningKey", (), {"key": "public-key"})()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.return_value = signing_key
+
+            with patch(
+                "api.app.core.auth.jwt.decode",
+                side_effect=ExpiredSignatureError("Token expired"),
+            ):
+                with self.assertRaises(AuthenticationException) as context:
+                    verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
 
     def test_require_auth_logs_invalid_access_token_failures(self) -> None:
         settings.AUTH0_ENABLED = True
