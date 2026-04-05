@@ -8,6 +8,7 @@ import httpx
 from starlette.requests import Request
 
 from api.app.core.auth import (
+    authorize_claims_for_permissions,
     extract_bearer_token,
     extract_token_permissions,
     get_auth0_verifier,
@@ -171,6 +172,24 @@ class AuthDependencyTests(unittest.TestCase):
         with self.assertRaises(AuthenticationException):
             extract_bearer_token(request)
 
+    def test_require_auth_logs_malformed_authorization_header(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", b"Token test-token")],
+            }
+        )
+
+        with patch("api.app.core.auth.logger") as logger_mock:
+            with self.assertRaises(AuthenticationException):
+                asyncio.run(require_auth(request))
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("missing_or_malformed_bearer_token", logger_mock.warning.call_args[0][1])
+
     def test_normalize_token_claims_strips_subject_scope_and_permissions(self) -> None:
         claims = normalize_token_claims(
             {
@@ -224,6 +243,52 @@ class AuthDependencyTests(unittest.TestCase):
                 asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 503)
 
+    def test_require_auth_logs_invalid_access_token_failures(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", b"Bearer invalid-token")],
+            }
+        )
+
+        verifier = MagicMock()
+        verifier.verify_token.side_effect = AuthenticationException(
+            "Invalid or expired Auth0 access token."
+        )
+
+        with patch("api.app.core.auth.get_auth0_verifier", return_value=verifier):
+            with patch("api.app.core.auth.logger") as logger_mock:
+                with self.assertRaises(AuthenticationException):
+                    asyncio.run(require_auth(request))
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("invalid_or_expired_access_token", logger_mock.warning.call_args[0][1])
+
+    def test_require_auth_logs_jwks_or_config_failures(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", b"Bearer test-token")],
+            }
+        )
+
+        with patch(
+            "api.app.core.auth.get_auth0_verifier",
+            side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
+        ):
+            with patch("api.app.core.auth.logger") as logger_mock:
+                with self.assertRaises(AuthConfigurationException):
+                    asyncio.run(require_auth(request))
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("auth_configuration_or_jwks_failure", logger_mock.warning.call_args[0][1])
+
     def test_require_realtime_access_rejects_missing_permission(self) -> None:
         settings.AUTH0_ENABLED = True
         settings.AUTH0_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
@@ -258,6 +323,29 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 403)
         self.assertIn("route:write", context.exception.message)
 
+    def test_authorize_claims_for_permissions_logs_missing_permissions(self) -> None:
+        settings.AUTH0_ENABLED = True
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/realtime/status",
+                "headers": [],
+            }
+        )
+
+        with patch("api.app.core.auth.logger") as logger_mock:
+            with self.assertRaises(AuthorizationException):
+                authorize_claims_for_permissions(
+                    {"sub": "auth0|user", "scope": "route:read"},
+                    ("realtime:manage",),
+                    message="You do not have permission to access realtime operational endpoints.",
+                    request=request,
+                )
+
+        logger_mock.warning.assert_called_once()
+        self.assertIn("missing_permissions", logger_mock.warning.call_args[0][1])
+
     def test_require_permissions_accepts_permission_from_scope_or_permissions_claim(self) -> None:
         settings.AUTH0_ENABLED = True
         route_access_guard = require_permissions(("route:read",))
@@ -280,6 +368,16 @@ class AuthDependencyTests(unittest.TestCase):
             asyncio.run(empty_guard({"sub": "auth0|user", "scope": "route:read"}))
 
         self.assertEqual(context.exception.status_code, 503)
+
+    def test_authorize_claims_for_permissions_accepts_valid_permissions(self) -> None:
+        settings.AUTH0_ENABLED = True
+
+        claims = authorize_claims_for_permissions(
+            {"sub": "auth0|user", "permissions": ["route:read"]},
+            ("route:read",),
+        )
+
+        self.assertEqual(claims["sub"], "auth0|user")
 
 
 class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
