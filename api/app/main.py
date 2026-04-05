@@ -64,10 +64,16 @@ app.add_exception_handler(RouteMindsException, routeminds_exception_handler)
 
 API_V1_PREFIX = "/api/v1"
 
-app.include_router(health_router, prefix=API_V1_PREFIX)
-app.include_router(routes_router, prefix=API_V1_PREFIX)
-app.include_router(predictions_router, prefix=API_V1_PREFIX)
-app.include_router(realtime_router, prefix=API_V1_PREFIX)
+
+def include_api_routes(prefix: str = "") -> None:
+    app.include_router(health_router, prefix=prefix)
+    app.include_router(routes_router, prefix=prefix)
+    app.include_router(predictions_router, prefix=prefix)
+    app.include_router(realtime_router, prefix=prefix)
+
+
+include_api_routes()
+include_api_routes(API_V1_PREFIX)
 
 @app.get("/", tags=["Root"])
 async def root():

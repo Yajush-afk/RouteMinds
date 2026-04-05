@@ -9,6 +9,7 @@ import {
   MapPinned,
 } from "lucide-react"
 
+import type { BackendHealthState } from "@/features/map/hooks/useBackendHealth"
 import type { PlaceSuggestion } from "@/features/map/domain/types"
 import {
   InputGroup,
@@ -18,6 +19,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 
 type MapSearchBarProps = {
+  backendHealth: BackendHealthState
   originText: string
   originResults: PlaceSuggestion[]
   isOriginSearching: boolean
@@ -36,6 +38,7 @@ type MapSearchBarProps = {
 }
 
 function MapSearchBar({
+  backendHealth,
   originText,
   originResults,
   isOriginSearching,
@@ -284,6 +287,30 @@ function MapSearchBar({
     return "grid size-7 place-items-center text-slate-500 transition-colors duration-200"
   }
 
+  function getBackendIndicatorClassName() {
+    if (backendHealth.status === "online") {
+      return "bg-emerald-500"
+    }
+
+    if (backendHealth.status === "offline") {
+      return "bg-rose-500"
+    }
+
+    return "bg-amber-500"
+  }
+
+  function getBackendStatusLabel() {
+    if (backendHealth.status === "online") {
+      return "API online"
+    }
+
+    if (backendHealth.status === "offline") {
+      return "API offline"
+    }
+
+    return "Checking API"
+  }
+
   return (
     <motion.div
       ref={containerRef}
@@ -302,6 +329,34 @@ function MapSearchBar({
         }}
         className="relative"
       >
+        <div className="mb-2 rounded-[1.15rem] border border-white/55 bg-white/50 px-3 py-2 shadow-[0_12px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl supports-backdrop-filter:bg-white/40">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              {backendHealth.status === "checking" ? (
+                <LoaderCircle className="size-3.5 shrink-0 animate-spin text-amber-600" />
+              ) : (
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full shadow-[0_0_0_3px_rgba(255,255,255,0.72)]",
+                    getBackendIndicatorClassName()
+                  )}
+                />
+              )}
+              <p className="truncate text-[12px] font-semibold tracking-[0.02em] text-slate-700">
+                {getBackendStatusLabel()}
+              </p>
+            </div>
+
+            <p className="max-w-[13rem] truncate text-[11px] text-slate-500">
+              {backendHealth.apiBaseUrl}
+            </p>
+          </div>
+
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+            {backendHealth.description}
+          </p>
+        </div>
+
         <InputGroup className={cn("w-full", getFieldClassName())}>
           <InputGroupInput
             placeholder="From"

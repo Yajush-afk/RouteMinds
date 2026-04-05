@@ -148,10 +148,26 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "healthy")
 
+    async def test_unversioned_health_endpoint_remains_public(self) -> None:
+        response = await self._request("GET", "/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "healthy")
+
     async def test_prediction_endpoint_remains_public(self) -> None:
         response = await self._request(
             "POST",
             "/api/v1/predictions/segments",
+            {"segments": [make_segment_payload()]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["predictions"]), 1)
+
+    async def test_unversioned_prediction_endpoint_remains_public(self) -> None:
+        response = await self._request(
+            "POST",
+            "/predictions/segments",
             {"segments": [make_segment_payload()]},
         )
 
