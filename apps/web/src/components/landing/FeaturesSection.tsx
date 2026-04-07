@@ -1,54 +1,83 @@
-import { useRef } from "react"
+import { Brain, Clock, Route, TrendingUp } from "lucide-react"
+import { cn } from "@workspace/ui/lib/utils"
 
 const features = [
   {
-    tag: "Route Rationalization",
-    heading: "Dynamic routing powered by ML-predicted travel times.",
+    title: "Route Rationalization",
     description:
-      "Optimizes routes based on machine learning predicted segment travel times — not static shortest distance. The system continuously updates cost estimates per road segment, enabling decisions that reflect real-world conditions rather than map geometry alone.",
-    image: "https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800&q=80&auto=format&fit=crop",
-    imageAlt: "City road network aerial view",
-    reverse: false,
+      "Dynamic route optimization based on ML-predicted segment travel times rather than static shortest distance.",
+    icon: <Route className="h-6 w-6" />,
   },
   {
-    tag: "Delay Prediction",
-    heading: "XGBoost-trained models that see delays before they happen.",
+    title: "Delay Prediction",
     description:
-      "An XGBoost-based segment travel-time model trained on GTFS schedules and simulated delay data. It learns temporal and spatial patterns across the transit network to forecast where and when delays will occur with high accuracy.",
-    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80&auto=format&fit=crop",
-    imageAlt: "Data visualization and analytics dashboard",
-    reverse: true,
+      "XGBoost-based segment travel-time prediction model trained on GTFS and simulated delay data.",
+    icon: <Clock className="h-6 w-6" />,
   },
   {
-    tag: "Route Selection",
-    heading: "Dijkstra-based optimization over predicted segment costs.",
+    title: "Route Selection",
     description:
-      "Applies Dijkstra's algorithm over a live transit graph where each edge weight reflects the predicted cost of traversal. This ensures the selected route is optimal against future conditions, not just current snapshot data.",
-    image: "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=800&q=80&auto=format&fit=crop",
-    imageAlt: "Metro transit map and routes",
-    reverse: false,
+      "Dijkstra-based route optimization using predicted segment costs over a transit graph.",
+    icon: <Brain className="h-6 w-6" />,
   },
   {
-    tag: "Real-time Enrichment",
-    heading: "Live vehicle positions injected directly into routing decisions.",
+    title: "Real-time Enrichment",
     description:
-      "Ingests GTFS-RT vehicle position feeds to capture live segment delays and inject that context into every routing computation. Routes are recalculated on the fly as new position data streams in, keeping decisions anchored to what is actually happening on the ground.",
-    image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80&auto=format&fit=crop",
-    imageAlt: "Real-time data streams and live monitoring",
-    reverse: true,
+      "GTFS-RT vehicle position ingestion with live segment delay context injection into routing decisions.",
+    icon: <TrendingUp className="h-6 w-6" />,
   },
 ]
 
-export default function FeaturesSection() {
-  const sectionRef = useRef<HTMLElement>(null)
+const Feature = ({
+  title,
+  description,
+  icon,
+  index,
+}: {
+  title: string
+  description: string
+  icon: React.ReactNode
+  index: number
+}) => {
+  return (
+    <div
+      className={cn(
+        "flex flex-col py-10 relative group/feature border-border",
+        "lg:border-r",
+        index === 0 && "lg:border-l",
+      )}
+    >
+      {/* Hover gradient */}
+      <div className="opacity-0 group-hover/feature:opacity-100 transition duration-200 absolute inset-0 h-full w-full bg-gradient-to-t from-[#fef3c7]/60 to-transparent pointer-events-none" />
 
+      {/* Icon */}
+      <div className="mb-4 relative z-10 px-8 text-[#5a2d14]">
+        {icon}
+      </div>
+
+      {/* Title with animated left bar */}
+      <div className="text-base font-semibold mb-3 relative z-10 px-8">
+        <div className="absolute left-0 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-border group-hover/feature:bg-[#5a2d14] transition-all duration-200 origin-center" />
+        <span className="group-hover/feature:translate-x-2 transition duration-200 inline-block font-heading text-foreground">
+          {title}
+        </span>
+      </div>
+
+      {/* Description */}
+      <p className="font-body text-sm leading-relaxed text-muted-foreground max-w-xs relative z-10 px-8">
+        {description}
+      </p>
+    </div>
+  )
+}
+
+export default function FeaturesSectionGrid() {
   return (
     <section
       id="features"
-      ref={sectionRef}
       className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
-      <div className="mx-auto max-w-7xl ">
+      <div className="mx-auto max-w-7xl">
 
         {/* Section header */}
         <div className="mb-20 flex flex-col items-center text-center sm:mb-28">
@@ -63,48 +92,10 @@ export default function FeaturesSection() {
           </p>
         </div>
 
-        {/* Alternating feature rows */}
-        <div className="flex flex-col gap-28 sm:gap-36">
-          {features.map((feature) => (
-            <div
-              key={feature.tag}
-              className={`flex flex-col gap-12 md:flex-row md:items-center md:gap-20 ${
-                feature.reverse ? "md:flex-row-reverse" : ""
-              }`}
-            >
-              {/* Image */}
-              <div className="flex flex-col gap-20 md:gap-36 w-full md:w-[52%]">
-                <div className="overflow-hidden rounded-[20px] gap-20 border border-zinc-300">
-                  <img
-                    src={feature.image}
-                    alt={feature.imageAlt}
-                    className="h-72 w-full object-cover sm:h-80 md:h-[380px]"
-                    loading="lazy"
-                  />
-                </div>
-              </div>
-
-              {/* Content */}
-              {/* Content */}
-<div className="w-full md:w-[48%]">
-  <div className="max-w-sm">
-    {/* Tag */}
-    <p className="font-body mb-5 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
-      {feature.tag}
-    </p>
-
-    {/* Heading */}
-    <h3 className="font-heading mb-6 text-[20px] leading-snug text-foreground">
-      {feature.heading}
-    </h3>
-
-    {/* Description */}
-    <p className="font-body text-[16px] leading-relaxed text-muted-foreground">
-      {feature.description}
-    </p>
-  </div>
-</div>
-            </div>
+        {/* Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-b border-border">
+          {features.map((feature, index) => (
+            <Feature key={feature.title} {...feature} index={index} />
           ))}
         </div>
 
