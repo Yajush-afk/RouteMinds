@@ -105,6 +105,11 @@ export function useMapPlacementState() {
     return getLocationRejectionReason(userPosition) ? null : userPosition
   }, [userPosition])
 
+  const routeOriginPoint = useMemo(
+    () => originPoint ?? userLocationPoint,
+    [originPoint, userLocationPoint]
+  )
+
   useEffect(() => {
     if (!userLocationPoint) {
       return
@@ -178,9 +183,13 @@ export function useMapPlacementState() {
 
       setDestinationPoint(result.position)
       setPlacementMessage(null)
-      queueDirectionsCamera(originPoint, result.position, result.position)
+      queueDirectionsCamera(
+        routeOriginPoint,
+        result.position,
+        result.position
+      )
     },
-    [originPoint, queueDirectionsCamera]
+    [queueDirectionsCamera, routeOriginPoint]
   )
 
   const handleLocateRequest = useCallback(() => {
@@ -193,6 +202,7 @@ export function useMapPlacementState() {
         return
       }
 
+      setPlacementMessage(null)
       setCameraIntent({
         type: "flyTo",
         center: position,
@@ -208,6 +218,7 @@ export function useMapPlacementState() {
   const mapViewportProps = useMemo(
     () => ({
       originPoint,
+      routeOriginPoint,
       showOriginMarker:
         originPoint !== null &&
         (!userLocationPoint || !pointsMatch(originPoint, userLocationPoint)),
@@ -226,6 +237,7 @@ export function useMapPlacementState() {
       handleLocateRequest,
       locationMessage,
       originPoint,
+      routeOriginPoint,
       status,
       userLocationPoint,
     ]
