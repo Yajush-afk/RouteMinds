@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 
 from api.app.core.auth import require_realtime_access
@@ -15,7 +17,7 @@ async def refresh_realtime(
     _claims: dict = Depends(require_realtime_access),
 ) -> RealtimeRefreshResponse:
     service = get_realtime_enrichment_service()
-    result = service.refresh_vehicle_positions()
+    result = await asyncio.to_thread(service.refresh_vehicle_positions)
     return RealtimeRefreshResponse(**result)
 
 

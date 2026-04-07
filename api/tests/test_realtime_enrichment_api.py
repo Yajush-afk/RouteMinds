@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
-from google.transit import gtfs_realtime_pb2
+
+try:
+    from google.transit import gtfs_realtime_pb2
+except ImportError:
+    gtfs_realtime_pb2 = None
 
 from api.app.api.v1.realtime import refresh_realtime, realtime_status
 from api.app.core.config import settings
@@ -69,6 +73,9 @@ def build_realtime_gtfs_fixture(temp_dir: Path) -> None:
 
 
 def build_protobuf_payload() -> bytes:
+    if gtfs_realtime_pb2 is None:
+        raise unittest.SkipTest("gtfs-realtime-bindings is not installed")
+
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.header.gtfs_realtime_version = "2.0"
     feed.header.timestamp = 1743494825
@@ -228,6 +235,18 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(service.last_provider_format, "protobuf")
         self.assertEqual(service.last_raw_record_count, 1)
         self.assertEqual(service.last_malformed_record_count, 0)
+
+    def test_fetcher_raises_clear_error_without_protobuf_bindings(self) -> None:
+        service = GTFSRealtimeIngestionService(
+            vehicle_positions_url="https://otd.delhi.gov.in/api/realtime/VehiclePositions.pb",
+            api_key="secret",
+        )
+
+        with patch("api.app.services.realtime_enrichment_service.gtfs_realtime_pb2", None):
+            with self.assertRaises(GTFSRealtimeException) as context:
+                service._normalize_protobuf_response(b"protobuf-payload")
+
+        self.assertIn("gtfs-realtime-bindings", str(context.exception))
 
     def test_missing_api_key_raises_clear_error(self) -> None:
         service = GTFSRealtimeIngestionService(
@@ -427,6 +446,35 @@ class RealtimeEnrichmentTests(unittest.TestCase):
 
         self.assertGreaterEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
         self.assertGreater(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
+
+    def test_routing_uses_static_route_id_for_live_context_lookup(self) -> None:
+        trip_1_stop_c_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 10 * 60)
+        snapshots = [
+            make_snapshot(
+                vehicle_id="V1",
+                trip_id="TRIP_1",
+                route_id="PROVIDER_ROUTE_ID",
+                latitude=28.719,
+                longitude=77.119,
+                gps_timestamp=trip_1_stop_c_arrival + 180,
+                snapshot_time=trip_1_stop_c_arrival + 185,
+            ),
+        ]
+        realtime_service = RealtimeEnrichmentService(
+            gtfs_static_dir=self.gtfs_dir,
+            ingestion_service=FakeIngestionService(snapshots),
+        )
+
+        realtime_service.refresh_vehicle_positions()
+        context = realtime_service.get_segment_live_context(
+            "R1",
+            "STOP_B",
+            "STOP_C",
+            reference_timestamp=trip_1_stop_c_arrival + 200,
+        )
+
+        assert context is not None
+        self.assertEqual(context.route_id, "R1")
 
     def test_routing_falls_back_to_zero_without_live_context(self) -> None:
         realtime_service = RealtimeEnrichmentService(
