@@ -86,10 +86,10 @@ export default function FeaturesSectionGrid() {
           <p className="font-body mb-4 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
             What We Offer
           </p>
-          <h2 className="font-heading mb-4 whitespace-nowrap text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
+          <h2 className="font-heading mb-4 whitespace-nowrap text-4xl   sm:text-4xl md:text-5xl">
             Travel Smarter, Not Harder.
           </h2>
-          <p className="font-body max-w-md text-base leading-relaxed text-muted-foreground">
+          <p className="font-body max-w-md text-lg leading-relaxed text-muted-foreground">
             Our ML engine processes thousands of real-time data points to keep Delhi moving efficiently.
           </p>
         </div>

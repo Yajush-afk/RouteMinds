@@ -62,7 +62,7 @@ export default function Navbar() {
           <Button
                 asChild
                 variant="outline"
-                className="font-body flex items-center gap-2 rounded-xl border-foreground/20 bg-background px-4 text-sm text-foreground transition-colors hover:bg-foreground/5 sm:px-5"              >
+                className="font-body flex landing-hover-lift items-center gap-2 rounded-[12px] border-foreground/20 bg-background shadow-2xl px-4 text-sm text-foreground transition-colors hover:bg-foreground/5 sm:px-5 border border-zinc-300"              >
                 <a
                   href="https://github.com"
                   target="_blank"
@@ -81,7 +81,7 @@ export default function Navbar() {
            {/* Get Started button */}
               <Button
                 asChild
-                className="font-body rounded-xl bg-foreground px-4 text-sm text-background transition-colors hover:bg-foreground/80 sm:px-5"              >
+                className="font-body rounded-[12px] landing-hover-lift bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300" >
                 <Link to="/auth">Get Started</Link>
               </Button>
         </div>

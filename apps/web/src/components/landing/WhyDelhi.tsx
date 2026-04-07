@@ -53,7 +53,7 @@ export default function WhyDelhiSection() {
             alt="Delhi Traffic"
             loading="lazy"
             decoding="async"
-            className="h-64 w-full object-cover transition-transform duration-500 sm:h-80 md:h-[350px] md:hover:scale-110"
+            className="h-64 w-full object-cover transition-transform duration-500 sm:h-80 md:h-[350px] md:hover:scale-110 border border-zinc-300"
           />
           <div className="absolute bottom-4 left-4 rounded-xl bg-background/90 px-3 py-2 shadow-md backdrop-blur-sm sm:bottom-6 sm:left-6 sm:px-4 sm:py-3">
             <p className=" font-body text-xs tracking-widest text-muted-foreground uppercase">

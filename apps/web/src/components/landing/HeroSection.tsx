@@ -63,7 +63,7 @@ export default function HeroSection() {
             <Button
             asChild
             size="lg"
-            className="font-body bg-black w-full justify-center gap-2 px-6 py-5 text-base text-white sm:w-auto sm:px-8 sm:py-6 sm:text-lg border border-zinc-300"
+            className="!font-heading rounded-[12px] landing-hover-lift  w-full justify-center gap-2 px-6 py-5 sm:w-auto sm:px-8 sm:py-6 sm:text-lg bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300"
           >
           <Link to="/map">
            Get Started
@@ -85,9 +85,23 @@ export default function HeroSection() {
               asChild
               variant="ghost"
               size="lg"
-              className="  font-body landing-hover-lift shadow-2xl w-full justify-center px-6 py-5 text-base sm:w-auto sm:px-8 sm:py-6 sm:text-lg border border-zinc-300"
+              className="  !font-heading landing-hover-lift shadow-2xl w-full justify-center px-6 py-5 text-base sm:w-auto sm:px-8 sm:py-6 sm:text-lg border border-zinc-300"
             >
-              <Link to="/map">View Map</Link>
+              <Link to="/map">
+              View Map
+              <svg
+             stroke="currentColor"
+             fill="currentColor"
+             strokeWidth="0"
+             viewBox="0 0 448 512"
+             className="size-3.5 -rotate-45"
+             height="1em"
+             width="1em"
+             xmlns="http://www.w3.org/2000/svg"
+            >
+            <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z" />
+             </svg>
+            </Link>
             </Button>
           </div>
         </div>
