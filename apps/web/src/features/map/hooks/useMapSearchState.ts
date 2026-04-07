@@ -1,20 +1,15 @@
 import { useCallback, useMemo, useState } from "react"
 
 import { YOUR_LOCATION_LABEL } from "@/features/map/domain/mapDefaults"
-import type {
-  LocationField,
-  PlaceSuggestion,
-} from "@/features/map/domain/types"
+import type { LocationField, PlaceSuggestion } from "@/features/map/domain/types"
 import { useDestinationSearch } from "@/features/map/hooks/useDestinationSearch"
 
 type UseMapSearchStateOptions = {
-  onFieldFocus: (field: LocationField) => void
   onOriginSelect: (result: PlaceSuggestion) => void
   onDestinationSelect: (result: PlaceSuggestion) => void
 }
 
 export function useMapSearchState({
-  onFieldFocus,
   onOriginSelect,
   onDestinationSelect,
 }: UseMapSearchStateOptions) {
@@ -55,7 +50,6 @@ export function useMapSearchState({
 
   const handleLocationChange = useCallback(
     (nextLocation: string) => {
-      onFieldFocus("from")
       setOriginLabel(nextLocation)
       setOriginSearchQuery(nextLocation)
 
@@ -63,12 +57,10 @@ export function useMapSearchState({
         clearOriginResults()
       }
     },
-    [clearOriginResults, onFieldFocus, setOriginSearchQuery]
+    [clearOriginResults, setOriginSearchQuery]
   )
 
   const handleOriginFocus = useCallback(() => {
-    onFieldFocus("from")
-
     if (originLabel !== YOUR_LOCATION_LABEL) {
       return
     }
@@ -76,7 +68,7 @@ export function useMapSearchState({
     setOriginLabel("")
     setOriginSearchQuery("")
     clearOriginResults()
-  }, [clearOriginResults, onFieldFocus, originLabel, setOriginSearchQuery])
+  }, [clearOriginResults, originLabel, setOriginSearchQuery])
 
   const handleOriginBlur = useCallback(() => {
     if (originLabel.trim()) {
@@ -90,37 +82,32 @@ export function useMapSearchState({
 
   const handleOriginSelect = useCallback(
     (result: PlaceSuggestion) => {
-      onFieldFocus("from")
       selectOriginSuggestion(result.label)
       setOriginLabel(result.label)
       onOriginSelect(result)
     },
-    [onFieldFocus, onOriginSelect, selectOriginSuggestion]
+    [onOriginSelect, selectOriginSuggestion]
   )
 
   const handleDestinationChange = useCallback(
     (nextDestination: string) => {
-      onFieldFocus("to")
       setDestinationSearchQuery(nextDestination)
 
       if (!nextDestination.trim()) {
         clearDestinationResults()
       }
     },
-    [clearDestinationResults, onFieldFocus, setDestinationSearchQuery]
+    [clearDestinationResults, setDestinationSearchQuery]
   )
 
-  const handleDestinationFocus = useCallback(() => {
-    onFieldFocus("to")
-  }, [onFieldFocus])
+  const handleDestinationFocus = useCallback(() => {}, [])
 
   const handleDestinationSelect = useCallback(
     (result: PlaceSuggestion) => {
-      onFieldFocus("to")
       selectDestinationSuggestion(result.label)
       onDestinationSelect(result)
     },
-    [onDestinationSelect, onFieldFocus, selectDestinationSuggestion]
+    [onDestinationSelect, selectDestinationSuggestion]
   )
 
   const searchPanelProps = useMemo(

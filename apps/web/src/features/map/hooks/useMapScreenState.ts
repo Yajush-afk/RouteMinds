@@ -20,7 +20,6 @@ export function useMapScreenState() {
   })
 
   const searchState = useMapSearchState({
-    onFieldFocus: placementState.setActiveField,
     onOriginSelect: placementState.handleOriginSelect,
     onDestinationSelect: placementState.handleDestinationSelect,
   })
