@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from "react"
 
-import { YOUR_LOCATION_LABEL } from "@/features/map/domain/mapDefaults"
-import type { LocationField, PlaceSuggestion } from "@/features/map/domain/types"
+import type { PlaceSuggestion } from "@/features/map/domain/types"
 import { useDestinationSearch } from "@/features/map/hooks/useDestinationSearch"
 
 type UseMapSearchStateOptions = {
@@ -35,19 +34,6 @@ export function useMapSearchState({
     selectSuggestion: selectDestinationSuggestion,
   } = useDestinationSearch()
 
-  const setFieldLabel = useCallback(
-    (field: LocationField, nextLabel: string) => {
-      if (field === "from") {
-        setOriginLabel(nextLabel)
-        selectOriginSuggestion(nextLabel)
-        return
-      }
-
-      selectDestinationSuggestion(nextLabel)
-    },
-    [selectDestinationSuggestion, selectOriginSuggestion]
-  )
-
   const handleLocationChange = useCallback(
     (nextLocation: string) => {
       setOriginLabel(nextLocation)
@@ -60,25 +46,11 @@ export function useMapSearchState({
     [clearOriginResults, setOriginSearchQuery]
   )
 
-  const handleOriginFocus = useCallback(() => {
-    if (originLabel !== YOUR_LOCATION_LABEL) {
-      return
-    }
-
-    setOriginLabel("")
-    setOriginSearchQuery("")
-    clearOriginResults()
-  }, [clearOriginResults, originLabel, setOriginSearchQuery])
+  const handleOriginFocus = useCallback(() => {}, [])
 
   const handleOriginBlur = useCallback(() => {
-    if (originLabel.trim()) {
-      return
-    }
-
-    setOriginLabel(YOUR_LOCATION_LABEL)
-    setOriginSearchQuery("")
     clearOriginResults()
-  }, [clearOriginResults, originLabel, setOriginSearchQuery])
+  }, [clearOriginResults])
 
   const handleOriginSelect = useCallback(
     (result: PlaceSuggestion) => {
@@ -156,7 +128,6 @@ export function useMapSearchState({
 
   return {
     searchPanelProps,
-    setFieldLabel,
   }
 }
 

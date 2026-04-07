@@ -4,12 +4,10 @@ import {
   DESTINATION_ZOOM,
   FALLBACK_DELHI_CENTER,
   LOCATE_ZOOM,
-  YOUR_LOCATION_LABEL,
 } from "@/features/map/domain/mapDefaults"
 import { getLocationRejectionReason } from "@/features/map/domain/locationPolicy"
 import type {
   CameraIntent,
-  LocationField,
   LngLat,
   LocationErrorCode,
   PlaceSuggestion,
@@ -37,13 +35,7 @@ function pointsMatch(first: LngLat, second: LngLat) {
   return first.lat === second.lat && first.lng === second.lng
 }
 
-type UseMapPlacementStateOptions = {
-  onFieldLabelChange: (field: LocationField, label: string) => void
-}
-
-export function useMapPlacementState({
-  onFieldLabelChange,
-}: UseMapPlacementStateOptions) {
+export function useMapPlacementState() {
   const [originPoint, setOriginPoint] = useState<LngLat | null>(null)
   const [destinationPoint, setDestinationPoint] = useState<LngLat | null>(null)
   const [cameraIntent, setCameraIntent] = useState<CameraIntent | null>(null)
@@ -113,31 +105,13 @@ export function useMapPlacementState({
     return getLocationRejectionReason(userPosition) ? null : userPosition
   }, [userPosition])
 
+  const routeOriginPoint = useMemo(
+    () => originPoint ?? userLocationPoint,
+    [originPoint, userLocationPoint]
+  )
+
   useEffect(() => {
     if (!userLocationPoint) {
-      return
-    }
-
-    // Sync the initial origin with resolved browser geolocation.
-    if (!originPoint) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setOriginPoint(userLocationPoint)
-      onFieldLabelChange("from", YOUR_LOCATION_LABEL)
-
-      if (destinationPoint) {
-        queueDirectionsCamera(
-          userLocationPoint,
-          destinationPoint,
-          userLocationPoint
-        )
-        return
-      }
-
-      setCameraIntent({
-        type: "flyTo",
-        center: userLocationPoint,
-        zoom: LOCATE_ZOOM,
-      })
       return
     }
 
@@ -145,10 +119,12 @@ export function useMapPlacementState({
       return
     }
 
-    if (!pointsMatch(originPoint, userLocationPoint)) {
+    if (originPoint && !pointsMatch(originPoint, userLocationPoint)) {
       return
     }
 
+    // Keep auto-geolocation camera behavior without creating/updating route markers.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCameraIntent({
       type: "flyTo",
       center: userLocationPoint,
@@ -157,7 +133,6 @@ export function useMapPlacementState({
   }, [
     destinationPoint,
     originPoint,
-    onFieldLabelChange,
     queueDirectionsCamera,
     userLocationPoint,
   ])
@@ -208,13 +183,32 @@ export function useMapPlacementState({
 
       setDestinationPoint(result.position)
       setPlacementMessage(null)
-      queueDirectionsCamera(originPoint, result.position, result.position)
+      queueDirectionsCamera(
+        routeOriginPoint,
+        result.position,
+        result.position
+      )
     },
-    [originPoint, queueDirectionsCamera]
+    [queueDirectionsCamera, routeOriginPoint]
   )
 
   const handleLocateRequest = useCallback(() => {
-    void locate()
+    void locate().then((position) => {
+      if (!position) {
+        return
+      }
+
+      if (getLocationRejectionReason(position)) {
+        return
+      }
+
+      setPlacementMessage(null)
+      setCameraIntent({
+        type: "flyTo",
+        center: position,
+        zoom: LOCATE_ZOOM,
+      })
+    })
   }, [locate])
 
   const handleCameraIntentHandled = useCallback(() => {
@@ -224,6 +218,7 @@ export function useMapPlacementState({
   const mapViewportProps = useMemo(
     () => ({
       originPoint,
+      routeOriginPoint,
       showOriginMarker:
         originPoint !== null &&
         (!userLocationPoint || !pointsMatch(originPoint, userLocationPoint)),
@@ -242,6 +237,7 @@ export function useMapPlacementState({
       handleLocateRequest,
       locationMessage,
       originPoint,
+      routeOriginPoint,
       status,
       userLocationPoint,
     ]
