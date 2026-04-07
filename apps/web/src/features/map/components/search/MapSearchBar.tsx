@@ -212,20 +212,17 @@ function MapSearchBar({
           duration: prefersReducedMotion ? 0 : 0.16,
           ease: "easeOut",
         }}
-        className="absolute top-full z-20 mt-2 w-full overflow-hidden rounded-[1.2rem] border border-white/55 bg-white/46 p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.16)] backdrop-blur-2xl supports-backdrop-filter:bg-white/38"
+        className="absolute top-full z-20 mt-2 w-full overflow-hidden rounded-2xl border border-black/5 bg-white/92 p-1.5 text-slate-700 shadow-lg backdrop-blur-md"
       >
-        <div className="pointer-events-none absolute inset-0 rounded-[inherit] bg-linear-to-br from-white/34 via-white/10 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-linear-to-r from-transparent via-white/90 to-transparent" />
-
         {isSearching ? (
-          <div className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/58 px-3 py-2.5 text-sm text-slate-600">
+          <div className="flex items-center gap-2 rounded-xl border border-black/5 bg-white px-3 py-2.5 text-sm text-slate-600">
             <LoaderCircle className="size-4 animate-spin text-slate-500" />
             <p>Searching locations...</p>
           </div>
         ) : null}
 
         {!isSearching ? (
-          <ul className="max-h-52 overflow-y-auto rounded-[0.95rem] border border-slate-200/70 bg-white">
+          <ul className="max-h-52 overflow-y-auto rounded-xl border border-black/5 bg-white">
             {results.map((result, index) => (
               <li
                 key={result.id}
@@ -253,8 +250,8 @@ function MapSearchBar({
                       className={cn(
                         "mt-0.5 grid size-7 shrink-0 place-items-center rounded-[0.8rem] border",
                         normalizedHighlightedIndex === index
-                          ? "border-white/80 bg-white/78 text-slate-700"
-                          : "border-white/55 bg-white/46 text-slate-500"
+                          ? "border-black/5 bg-white text-slate-700"
+                          : "border-black/5 bg-slate-50 text-slate-500"
                       )}
                     >
                       <MapPin className="size-3.5" />
@@ -268,7 +265,7 @@ function MapSearchBar({
         ) : null}
 
         {!isSearching && showNoResults && results.length === 0 && (
-          <div className="flex items-center gap-2 rounded-[0.95rem] border border-white/60 bg-white/56 px-3 py-2.5 text-sm text-slate-600">
+          <div className="flex items-center gap-2 rounded-xl border border-black/5 bg-white px-3 py-2.5 text-sm text-slate-600">
             <CircleAlert className="size-4 text-slate-500" />
             <p>{emptyMessage}</p>
           </div>
@@ -279,7 +276,7 @@ function MapSearchBar({
 
   function getFieldClassName() {
     return cn(
-      "min-h-12 rounded-[1rem] border border-slate-200 bg-white px-1.5 shadow-none transition-[box-shadow,border-color] duration-250 ease-out hover:border-slate-300 hover:bg-white has-[[data-slot=input-group-control]:focus-visible]:shadow-[0_6px_10px_4px_rgba(15,23,42,0.08)] has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:!border-slate-200 dark:!bg-white dark:hover:!border-slate-300"
+      "min-h-12 rounded-2xl border border-black/5 bg-white/92 px-1.5 text-slate-700 shadow-lg backdrop-blur-md transition-[box-shadow,border-color,background-color] duration-250 ease-out hover:bg-white has-[[data-slot=input-group-control]:focus-visible]:shadow-lg has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:!border-black/5 dark:!bg-white/92"
     )
   }
 
@@ -329,7 +326,7 @@ function MapSearchBar({
         }}
         className="relative"
       >
-        <div className="mb-2 rounded-[1.15rem] border border-white/55 bg-white/50 px-3 py-2 shadow-[0_12px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl supports-backdrop-filter:bg-white/40">
+        <div className="mb-2 rounded-2xl border border-black/5 bg-white/92 px-4 py-3 text-slate-700 shadow-lg backdrop-blur-md">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
               {backendHealth.status === "checking" ? (
@@ -342,7 +339,7 @@ function MapSearchBar({
                   )}
                 />
               )}
-              <p className="truncate text-[12px] font-semibold tracking-[0.02em] text-slate-700">
+              <p className="truncate text-[12px] font-semibold tracking-[0.02em] text-slate-900">
                 {getBackendStatusLabel()}
               </p>
             </div>
