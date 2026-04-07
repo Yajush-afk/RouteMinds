@@ -1,219 +1,113 @@
-import {
-  Brain,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  MapPin,
-  Route,
-  Shield,
-  TrendingUp,
-} from "lucide-react"
-import { useEffect, useRef, useState } from "react"
-import { useReducedMotion } from "motion/react"
-
-import { Button } from "@workspace/ui/components/button"
-import {
-  Carousel,
-  type CarouselApi,
-  CarouselContent,
-  CarouselItem,
-} from "@workspace/ui/components/carousel"
-import { cn } from "@workspace/ui/lib/utils"
+import { useRef } from "react"
 
 const features = [
   {
-    icon: <Clock className="h-6 w-6 text-primary" />,
-    title: "Delay Prediction",
+    tag: "Route Rationalization",
+    heading: "Dynamic routing powered by ML-predicted travel times.",
     description:
-      "Estimate tomorrow's delays using historical traffic data and seasonal patterns unique to Delhi's road network.",
+      "Optimizes routes based on machine learning predicted segment travel times — not static shortest distance. The system continuously updates cost estimates per road segment, enabling decisions that reflect real-world conditions rather than map geometry alone.",
+    image: "https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800&q=80&auto=format&fit=crop",
+    imageAlt: "City road network aerial view",
+    reverse: false,
   },
   {
-    icon: <TrendingUp className="h-6 w-6 text-primary" />,
-    title: "Real-Time Traffic Analysis",
+    tag: "Delay Prediction",
+    heading: "XGBoost-trained models that see delays before they happen.",
     description:
-      "Continuously monitors live road conditions and adjusts route predictions instantly across Delhi's road network.",
+      "An XGBoost-based segment travel-time model trained on GTFS schedules and simulated delay data. It learns temporal and spatial patterns across the transit network to forecast where and when delays will occur with high accuracy.",
+    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80&auto=format&fit=crop",
+    imageAlt: "Data visualization and analytics dashboard",
+    reverse: true,
   },
   {
-    icon: <MapPin className="h-6 w-6 text-primary" />,
-    title: "Road Parameter Monitoring",
+    tag: "Route Selection",
+    heading: "Dijkstra-based optimization over predicted segment costs.",
     description:
-      "Tracks road closures, construction zones, VIP movements and weather impact on routes in real time.",
+      "Applies Dijkstra's algorithm over a live transit graph where each edge weight reflects the predicted cost of traversal. This ensures the selected route is optimal against future conditions, not just current snapshot data.",
+    image: "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=800&q=80&auto=format&fit=crop",
+    imageAlt: "Metro transit map and routes",
+    reverse: false,
   },
   {
-    icon: <Route className="h-6 w-6 text-primary" />,
-    title: "Multi-Route Rationalization",
+    tag: "Real-time Enrichment",
+    heading: "Live vehicle positions injected directly into routing decisions.",
     description:
-      "Balances traffic load across multiple routes to reduce city-wide congestion and ensure optimal distribution.",
-  },
-  {
-    icon: <Brain className="h-6 w-6 text-primary" />,
-    title: "Smart Suggestions",
-    description:
-      "Get the best route based on predicted congestion, real-time variables and your travel history.",
-  },
-  {
-    icon: <Shield className="h-6 w-6 text-primary" />,
-    title: "Historical Pattern Learning",
-    description:
-      "ML model continuously learns from past traffic data to improve future predictions with every passing day.",
+      "Ingests GTFS-RT vehicle position feeds to capture live segment delays and inject that context into every routing computation. Routes are recalculated on the fly as new position data streams in, keeping decisions anchored to what is actually happening on the ground.",
+    image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80&auto=format&fit=crop",
+    imageAlt: "Real-time data streams and live monitoring",
+    reverse: true,
   },
 ]
 
 export default function FeaturesSection() {
   const sectionRef = useRef<HTMLElement>(null)
-  const shouldReduceMotion = useReducedMotion()
-  const [api, setApi] = useState<CarouselApi>()
-  const [current, setCurrent] = useState(0)
-  const [isInView, setIsInView] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 767px)")
-    const updateIsMobile = () => setIsMobile(mediaQuery.matches)
-
-    updateIsMobile()
-    mediaQuery.addEventListener("change", updateIsMobile)
-
-    return () => mediaQuery.removeEventListener("change", updateIsMobile)
-  }, [])
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsInView(entry.isIntersecting),
-      { threshold: 0.3 }
-    )
-
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    if (!api) return
-
-    const updateCurrent = () => {
-      setCurrent(api.selectedScrollSnap())
-    }
-
-    updateCurrent()
-    api.on("select", updateCurrent)
-    api.on("reInit", updateCurrent)
-
-    return () => {
-      api.off("select", updateCurrent)
-      api.off("reInit", updateCurrent)
-    }
-  }, [api])
-
-  useEffect(() => {
-    if (!api || !isInView || shouldReduceMotion || isPaused || isMobile) return
-
-    const interval = window.setInterval(() => {
-      api.scrollNext()
-    }, 2500)
-
-    return () => window.clearInterval(interval)
-  }, [api, isInView, shouldReduceMotion, isPaused, isMobile])
 
   return (
     <section
       id="features"
       ref={sectionRef}
-      className="bg-secondary px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+      className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
-      <div className="mx-auto max-w-7xl">
-        <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
-          What We Offer
-        </p>
-        <div className="mb-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-          <h2 className="landing-heading max-w-lg text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
-            Travel Smarter,
-            <br /> Not Harder.
+      <div className="mx-auto max-w-7xl ">
+
+        {/* Section header */}
+        <div className="mb-20 flex flex-col items-center text-center sm:mb-28">
+          <p className="font-body mb-4 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
+            What We Offer
+          </p>
+          <h2 className="font-heading mb-4 whitespace-nowrap text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
+            Travel Smarter, Not Harder.
           </h2>
+          <p className="font-body max-w-md text-base leading-relaxed text-muted-foreground">
+            Our ML engine processes thousands of real-time data points to keep Delhi moving efficiently.
+          </p>
         </div>
-        <p className="mb-8 max-w-md text-base leading-relaxed text-muted-foreground sm:mb-12">
-          Our ML engine processes thousands of real-time data points to keep
-          Delhi moving efficiently.
-        </p>
 
-        <Carousel
-          setApi={setApi}
-          opts={{ align: "start", loop: true }}
-          className="w-full"
-        >
-          <CarouselContent>
-            {features.map((feature) => (
-              <CarouselItem key={feature.title}>
-                <div
-                  className="flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-background p-5 sm:min-h-55 sm:p-6 md:min-h-50 md:p-8"
-                  onMouseEnter={() => setIsPaused(true)}
-                  onMouseLeave={() => setIsPaused(false)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shadow-sm sm:h-11 sm:w-11">
-                      {feature.icon}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 sm:mt-6">
-                    <h3 className="landing-heading mb-2 text-lg text-foreground sm:text-xl">
-                      {feature.title}
-                    </h3>
-                    <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-                      {feature.description}
-                    </p>
-                  </div>
+        {/* Alternating feature rows */}
+        <div className="flex flex-col gap-28 sm:gap-36">
+          {features.map((feature) => (
+            <div
+              key={feature.tag}
+              className={`flex flex-col gap-12 md:flex-row md:items-center md:gap-20 ${
+                feature.reverse ? "md:flex-row-reverse" : ""
+              }`}
+            >
+              {/* Image */}
+              <div className="flex flex-col gap-20 md:gap-36 w-full md:w-[52%]">
+                <div className="overflow-hidden rounded-[20px] gap-20 border border-zinc-300">
+                  <img
+                    src={feature.image}
+                    alt={feature.imageAlt}
+                    className="h-72 w-full object-cover sm:h-80 md:h-[380px]"
+                    loading="lazy"
+                  />
                 </div>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-        </Carousel>
+              </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3 sm:mt-6">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-lg"
-            onClick={() => api?.scrollPrev()}
-            className="shrink-0 rounded-xl border-border bg-background text-muted-foreground shadow-none hover:border-primary hover:bg-background hover:text-primary"
-            aria-label="Previous feature"
-          >
-            <ChevronLeft />
-          </Button>
+              {/* Content */}
+              {/* Content */}
+<div className="w-full md:w-[48%]">
+  <div className="max-w-sm">
+    {/* Tag */}
+    <p className="font-body mb-5 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
+      {feature.tag}
+    </p>
 
-          <div className="flex flex-1 justify-center gap-2">
-            {features.map((feature, index) => (
-              <Button
-                key={feature.title}
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => api?.scrollTo(index)}
-                aria-label={`Go to ${feature.title}`}
-                className={cn(
-                  "h-2 min-w-0 rounded-xl px-0 transition-all duration-300 hover:bg-primary/20",
-                  current === index
-                    ? "w-6 bg-primary hover:bg-primary/90"
-                    : "w-2 bg-border"
-                )}
-              />
-            ))}
-          </div>
+    {/* Heading */}
+    <h3 className="font-heading mb-6 text-[20px] leading-snug text-foreground">
+      {feature.heading}
+    </h3>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-lg"
-            onClick={() => api?.scrollNext()}
-            className="shrink-0 rounded-xl border-border bg-background text-muted-foreground shadow-none hover:border-primary hover:bg-background hover:text-primary"
-            aria-label="Next feature"
-          >
-            <ChevronRight />
-          </Button>
+    {/* Description */}
+    <p className="font-body text-[16px] leading-relaxed text-muted-foreground">
+      {feature.description}
+    </p>
+  </div>
+</div>
+            </div>
+          ))}
         </div>
+
       </div>
     </section>
   )

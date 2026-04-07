@@ -43,7 +43,7 @@ export default function WhyDelhiSection() {
   return (
     <section
       id="why-delhi"
-      className="bg-background px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+      className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
       <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 sm:gap-12 md:grid-cols-2 md:gap-16">
         {/* Left - Image */}
@@ -56,10 +56,10 @@ export default function WhyDelhiSection() {
             className="h-64 w-full object-cover transition-transform duration-500 sm:h-80 md:h-[350px] md:hover:scale-110"
           />
           <div className="absolute bottom-4 left-4 rounded-xl bg-background/90 px-3 py-2 shadow-md backdrop-blur-sm sm:bottom-6 sm:left-6 sm:px-4 sm:py-3">
-            <p className="text-xs tracking-widest text-muted-foreground uppercase">
+            <p className=" font-body text-xs tracking-widest text-muted-foreground uppercase">
               Daily Commuters
             </p>
-            <p className="landing-heading text-xl text-foreground sm:text-2xl">
+            <p className="font-heading  text-xl text-foreground sm:text-2xl">
               14M+
             </p>
           </div>
@@ -68,12 +68,12 @@ export default function WhyDelhiSection() {
         {/* Right - Content */}
         <div className="space-y-8 sm:space-y-10">
           <div>
-            <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
+            <p className="font-body mb-3 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
               Why Delhi?
             </p>
-            <h2 className="landing-heading text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
+            <h2 className="font-heading  text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
               A City Where Time <br />
-              <span className="text-primary">is Unpredictable.</span>
+              <span className="text-[#5a2d14]">is Unpredictable.</span>
             </h2>
           </div>
 
@@ -90,14 +90,14 @@ export default function WhyDelhiSection() {
                 className="flex items-start gap-4 sm:gap-6"
                 variants={item}
               >
-                <span className="flex-shrink-0 text-2xl leading-none font-bold text-border sm:text-3xl">
+                <span className="font-heading shrink-0 text-2xl leading-none font-bold text-border sm:text-3xl">
                   {reason.number}
                 </span>
                 <div>
-                  <h3 className="landing-heading mb-1 text-base text-foreground">
+                  <h3 className="font-heading font-semibold mb-1 text-base text-foreground">
                     {reason.title}
                   </h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
+                  <p className="font-body text-sm leading-relaxed text-muted-foreground">
                     {reason.description}
                   </p>
                 </div>
