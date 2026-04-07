@@ -33,7 +33,7 @@ export default function ProtectedRoute() {
     return (
       <AuthStatusScreen
         title="Authentication is not configured"
-        message={configError ?? "Auth0 configuration is unavailable."}
+        message={configError ?? "Authentication configuration is unavailable."}
       />
     )
   }

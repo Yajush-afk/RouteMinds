@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+
 def normalize_auth0_domain(value: str) -> str:
     normalized = value.strip()
     if normalized.startswith("https://"):
@@ -26,8 +27,19 @@ def normalize_origin(value: str) -> str:
     if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
         raise ValueError(
             "CORS_ALLOW_ORIGINS entries must be bare origins without paths, queries, or fragments."
-        )
+    )
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def normalize_supabase_url(value: str) -> str:
+    parsed = urlparse(value.strip())
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("SUPABASE_URL must be a valid https origin.")
+    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
+        raise ValueError(
+            "SUPABASE_URL must be a bare project origin without paths, queries, or fragments."
+        )
+    return f"https://{parsed.netloc}"
 
 
 def normalize_auth0_issuer(value: str) -> str:
@@ -40,6 +52,23 @@ def normalize_auth0_issuer(value: str) -> str:
         )
     return f"https://{parsed.netloc}/"
 
+
+def normalize_supabase_issuer(value: str) -> str:
+    parsed = urlparse(value.strip())
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("SUPABASE_JWT_ISSUER must be a valid https URL.")
+    if parsed.params or parsed.query or parsed.fragment:
+        raise ValueError(
+            "SUPABASE_JWT_ISSUER cannot include params, queries, or fragments."
+        )
+    normalized_path = parsed.path.rstrip("/")
+    if normalized_path != "/auth/v1":
+        raise ValueError(
+            "SUPABASE_JWT_ISSUER must point to the project auth issuer at /auth/v1."
+        )
+    return f"https://{parsed.netloc}{normalized_path}"
+
+
 class Settings(BaseSettings):
     APP_NAME: str = "RouteMinds API"
     APP_VERSION: str = "1.0.0"
@@ -50,6 +79,12 @@ class Settings(BaseSettings):
         "http://localhost:5173,"
         "http://127.0.0.1:5173"
     )
+    SUPABASE_AUTH_ENABLED: bool = False
+    SUPABASE_URL: str = ""
+    SUPABASE_JWT_ISSUER: str = ""
+    SUPABASE_JWT_AUDIENCE: str = ""
+    SUPABASE_JWT_ALGORITHMS: str = "RS256"
+    SUPABASE_REALTIME_REQUIRED_PERMISSION: str = "realtime:manage"
     AUTH0_ENABLED: bool = False
     AUTH0_DOMAIN: str = ""
     AUTH0_AUDIENCE: str = ""
@@ -82,6 +117,19 @@ class Settings(BaseSettings):
                 return False
         return value
 
+    @field_validator("SUPABASE_AUTH_ENABLED", mode="before")
+    @classmethod
+    def parse_supabase_auth_enabled(cls, value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "enabled"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "disabled"}:
+                return False
+        return value
+
     @field_validator("AUTH0_ENABLED", mode="before")
     @classmethod
     def parse_auth0_enabled(cls, value):
@@ -105,6 +153,16 @@ class Settings(BaseSettings):
             return ",".join(origins)
         return value
 
+    @field_validator("SUPABASE_URL", mode="before")
+    @classmethod
+    def parse_supabase_url(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return ""
+            return normalize_supabase_url(normalized)
+        return value
+
     @field_validator("AUTH0_DOMAIN", mode="before")
     @classmethod
     def parse_auth0_domain(cls, value):
@@ -112,11 +170,27 @@ class Settings(BaseSettings):
             return normalize_auth0_domain(value)
         return value
 
-    @field_validator("AUTH0_AUDIENCE", "AUTH0_REALTIME_REQUIRED_PERMISSION", mode="before")
+    @field_validator(
+        "SUPABASE_JWT_AUDIENCE",
+        "SUPABASE_REALTIME_REQUIRED_PERMISSION",
+        "AUTH0_AUDIENCE",
+        "AUTH0_REALTIME_REQUIRED_PERMISSION",
+        mode="before",
+    )
     @classmethod
     def strip_string_settings(cls, value):
         if isinstance(value, str):
             return value.strip()
+        return value
+
+    @field_validator("SUPABASE_JWT_ISSUER", mode="before")
+    @classmethod
+    def parse_supabase_jwt_issuer(cls, value):
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return ""
+            return normalize_supabase_issuer(normalized)
         return value
 
     @field_validator("AUTH0_ISSUER", mode="before")
@@ -127,6 +201,22 @@ class Settings(BaseSettings):
             if not normalized:
                 return ""
             return normalize_auth0_issuer(normalized)
+        return value
+
+    @field_validator("SUPABASE_JWT_ALGORITHMS", mode="before")
+    @classmethod
+    def parse_supabase_jwt_algorithms(cls, value):
+        if isinstance(value, str):
+            algorithms = [
+                algorithm.strip().upper()
+                for algorithm in value.split(",")
+                if algorithm.strip()
+            ]
+            if not algorithms:
+                raise ValueError(
+                    "SUPABASE_JWT_ALGORITHMS must contain at least one algorithm."
+                )
+            return ",".join(algorithms)
         return value
 
     @field_validator("AUTH0_ALGORITHMS", mode="before")
@@ -142,6 +232,43 @@ class Settings(BaseSettings):
                 raise ValueError("AUTH0_ALGORITHMS must contain at least one algorithm.")
             return ",".join(algorithms)
         return value
+
+    @property
+    def auth_enabled(self) -> bool:
+        return self.SUPABASE_AUTH_ENABLED or self.AUTH0_ENABLED
+
+    @property
+    def auth_project_url(self) -> str:
+        if self.SUPABASE_URL:
+            return self.SUPABASE_URL
+        if self.AUTH0_DOMAIN:
+            return f"https://{normalize_auth0_domain(self.AUTH0_DOMAIN)}"
+        return ""
+
+    @property
+    def auth_jwt_issuer(self) -> str:
+        if self.SUPABASE_JWT_ISSUER:
+            return self.SUPABASE_JWT_ISSUER
+        if self.AUTH0_ISSUER:
+            return self.AUTH0_ISSUER.rstrip("/")
+        if self.auth_project_url:
+            return f"{self.auth_project_url}/auth/v1"
+        return ""
+
+    @property
+    def auth_jwt_audience(self) -> str:
+        return self.SUPABASE_JWT_AUDIENCE or self.AUTH0_AUDIENCE
+
+    @property
+    def auth_jwt_algorithms(self) -> str:
+        return self.SUPABASE_JWT_ALGORITHMS or self.AUTH0_ALGORITHMS
+
+    @property
+    def realtime_required_permission(self) -> str:
+        return (
+            self.SUPABASE_REALTIME_REQUIRED_PERMISSION
+            or self.AUTH0_REALTIME_REQUIRED_PERMISSION
+        )
 
     @field_validator("GTFS_RT_AUTH_MODE", mode="before")
     @classmethod
@@ -162,29 +289,35 @@ class Settings(BaseSettings):
         return value
 
     def validate_runtime_configuration(self) -> None:
-        if not self.AUTH0_ENABLED:
+        if not self.auth_enabled:
             return
 
         missing_settings: list[str] = []
-        if not self.AUTH0_DOMAIN:
-            missing_settings.append("AUTH0_DOMAIN")
-        if not self.AUTH0_AUDIENCE:
-            missing_settings.append("AUTH0_AUDIENCE")
-        if not self.AUTH0_REALTIME_REQUIRED_PERMISSION:
-            missing_settings.append("AUTH0_REALTIME_REQUIRED_PERMISSION")
+        if not self.auth_project_url:
+            missing_settings.append("SUPABASE_URL")
+        if not self.auth_jwt_audience:
+            missing_settings.append("SUPABASE_JWT_AUDIENCE")
+        if not self.realtime_required_permission:
+            missing_settings.append("SUPABASE_REALTIME_REQUIRED_PERMISSION")
 
         if missing_settings:
             raise ValueError(
-                "Auth0 is enabled but the following settings are missing: "
+                "Supabase auth is enabled but the following settings are missing: "
                 + ", ".join(missing_settings)
                 + "."
             )
 
-        if self.AUTH0_ISSUER:
-            issuer_host = urlparse(self.AUTH0_ISSUER).netloc
-            if issuer_host != self.AUTH0_DOMAIN:
+        issuer = self.auth_jwt_issuer
+        if issuer:
+            issuer_parts = urlparse(issuer)
+            project_host = urlparse(self.auth_project_url).netloc
+            if issuer_parts.netloc != project_host:
                 raise ValueError(
-                    "AUTH0_ISSUER host must match AUTH0_DOMAIN so token issuer and JWKS lookup use the same tenant."
+                    "SUPABASE_JWT_ISSUER host must match SUPABASE_URL so token issuer and JWKS lookup use the same project."
+                )
+            if issuer_parts.path.rstrip("/") != "/auth/v1":
+                raise ValueError(
+                    "SUPABASE_JWT_ISSUER must point to the project auth issuer at /auth/v1."
                 )
 
     class Config:

@@ -12,7 +12,7 @@ from api.app.core.auth import (
     authorize_claims_for_permissions,
     extract_bearer_token,
     extract_token_permissions,
-    get_auth0_verifier,
+    get_auth_verifier,
     normalize_token_claims,
     require_auth,
     require_permissions,
@@ -112,24 +112,41 @@ class StubRealtimeApiService:
 
 class AuthDependencyTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
+        self.original_supabase_url = settings.SUPABASE_URL
+        self.original_supabase_jwt_issuer = settings.SUPABASE_JWT_ISSUER
+        self.original_supabase_jwt_audience = settings.SUPABASE_JWT_AUDIENCE
+        self.original_supabase_jwt_algorithms = settings.SUPABASE_JWT_ALGORITHMS
+        self.original_supabase_realtime_permission = (
+            settings.SUPABASE_REALTIME_REQUIRED_PERMISSION
+        )
         self.original_auth0_enabled = settings.AUTH0_ENABLED
         self.original_auth0_domain = settings.AUTH0_DOMAIN
         self.original_auth0_audience = settings.AUTH0_AUDIENCE
         self.original_auth0_issuer = settings.AUTH0_ISSUER
         self.original_auth0_algorithms = settings.AUTH0_ALGORITHMS
         self.original_auth0_realtime_permission = settings.AUTH0_REALTIME_REQUIRED_PERMISSION
-        get_auth0_verifier.cache_clear()
+        get_auth_verifier.cache_clear()
 
     def tearDown(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
+        settings.SUPABASE_URL = self.original_supabase_url
+        settings.SUPABASE_JWT_ISSUER = self.original_supabase_jwt_issuer
+        settings.SUPABASE_JWT_AUDIENCE = self.original_supabase_jwt_audience
+        settings.SUPABASE_JWT_ALGORITHMS = self.original_supabase_jwt_algorithms
+        settings.SUPABASE_REALTIME_REQUIRED_PERMISSION = (
+            self.original_supabase_realtime_permission
+        )
         settings.AUTH0_ENABLED = self.original_auth0_enabled
         settings.AUTH0_DOMAIN = self.original_auth0_domain
         settings.AUTH0_AUDIENCE = self.original_auth0_audience
         settings.AUTH0_ISSUER = self.original_auth0_issuer
         settings.AUTH0_ALGORITHMS = self.original_auth0_algorithms
         settings.AUTH0_REALTIME_REQUIRED_PERMISSION = self.original_auth0_realtime_permission
-        get_auth0_verifier.cache_clear()
+        get_auth_verifier.cache_clear()
 
     def test_require_auth_returns_disabled_claims_when_auth_is_off(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = False
         settings.AUTH0_ENABLED = False
         request = Request({"type": "http", "headers": []})
 
@@ -138,7 +155,9 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(claims["sub"], "auth-disabled")
 
     def test_require_auth_rejects_missing_token_when_auth_is_on(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         request = Request({"type": "http", "headers": []})
 
         with self.assertRaises(AuthenticationException) as context:
@@ -146,7 +165,9 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 401)
 
     def test_require_auth_verifies_bearer_token(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         request = Request(
             {
                 "type": "http",
@@ -156,7 +177,7 @@ class AuthDependencyTests(unittest.TestCase):
         verifier = MagicMock()
         verifier.verify_token.return_value = {"sub": "auth0|user-123"}
 
-        with patch("api.app.core.auth.get_auth0_verifier", return_value=verifier):
+        with patch("api.app.core.auth.get_auth_verifier", return_value=verifier):
             claims = asyncio.run(require_auth(request))
 
         verifier.verify_token.assert_called_once_with("test-token")
@@ -174,7 +195,9 @@ class AuthDependencyTests(unittest.TestCase):
             extract_bearer_token(request)
 
     def test_require_auth_logs_malformed_authorization_header(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         request = Request(
             {
                 "type": "http",
@@ -217,18 +240,18 @@ class AuthDependencyTests(unittest.TestCase):
             {"route:read", "route:write", "realtime:manage"},
         )
 
-    def test_missing_auth0_domain_or_audience_raises_config_error(self) -> None:
-        settings.AUTH0_DOMAIN = ""
-        settings.AUTH0_AUDIENCE = ""
+    def test_missing_supabase_url_or_audience_raises_config_error(self) -> None:
+        settings.SUPABASE_URL = ""
+        settings.SUPABASE_JWT_AUDIENCE = ""
 
         with self.assertRaises(AuthConfigurationException) as context:
-            get_auth0_verifier()
+            get_auth_verifier()
         self.assertEqual(context.exception.status_code, 503)
 
     def test_require_auth_returns_service_error_when_jwks_lookup_fails(self) -> None:
-        settings.AUTH0_ENABLED = True
-        settings.AUTH0_DOMAIN = "tenant.auth0.com"
-        settings.AUTH0_AUDIENCE = "routeminds-api"
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         request = Request(
             {
                 "type": "http",
@@ -237,17 +260,17 @@ class AuthDependencyTests(unittest.TestCase):
         )
 
         with patch(
-            "api.app.core.auth.get_auth0_verifier",
-            side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
+            "api.app.core.auth.get_auth_verifier",
+            side_effect=AuthConfigurationException("Unable to retrieve Supabase signing keys."),
         ):
             with self.assertRaises(AuthConfigurationException) as context:
                     asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 503)
 
     def test_auth0_verifier_rejects_invalid_audience(self) -> None:
-        settings.AUTH0_DOMAIN = "tenant.auth0.com"
-        settings.AUTH0_AUDIENCE = "routeminds-api"
-        verifier = get_auth0_verifier()
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        verifier = get_auth_verifier()
         signing_key = type("SigningKey", (), {"key": "public-key"})()
 
         with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
@@ -263,9 +286,9 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 401)
 
     def test_auth0_verifier_rejects_invalid_issuer(self) -> None:
-        settings.AUTH0_DOMAIN = "tenant.auth0.com"
-        settings.AUTH0_AUDIENCE = "routeminds-api"
-        verifier = get_auth0_verifier()
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        verifier = get_auth_verifier()
         signing_key = type("SigningKey", (), {"key": "public-key"})()
 
         with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
@@ -281,9 +304,9 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 401)
 
     def test_auth0_verifier_rejects_expired_tokens(self) -> None:
-        settings.AUTH0_DOMAIN = "tenant.auth0.com"
-        settings.AUTH0_AUDIENCE = "routeminds-api"
-        verifier = get_auth0_verifier()
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        verifier = get_auth_verifier()
         signing_key = type("SigningKey", (), {"key": "public-key"})()
 
         with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
@@ -299,7 +322,9 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 401)
 
     def test_require_auth_logs_invalid_access_token_failures(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         request = Request(
             {
                 "type": "http",
@@ -311,10 +336,10 @@ class AuthDependencyTests(unittest.TestCase):
 
         verifier = MagicMock()
         verifier.verify_token.side_effect = AuthenticationException(
-            "Invalid or expired Auth0 access token."
+            "Invalid or expired Supabase access token."
         )
 
-        with patch("api.app.core.auth.get_auth0_verifier", return_value=verifier):
+        with patch("api.app.core.auth.get_auth_verifier", return_value=verifier):
             with patch("api.app.core.auth.logger") as logger_mock:
                 with self.assertRaises(AuthenticationException):
                     asyncio.run(require_auth(request))
@@ -323,7 +348,9 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertIn("invalid_or_expired_access_token", logger_mock.warning.call_args[0][1])
 
     def test_require_auth_logs_jwks_or_config_failures(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         request = Request(
             {
                 "type": "http",
@@ -334,8 +361,8 @@ class AuthDependencyTests(unittest.TestCase):
         )
 
         with patch(
-            "api.app.core.auth.get_auth0_verifier",
-            side_effect=AuthConfigurationException("Unable to retrieve Auth0 signing keys."),
+            "api.app.core.auth.get_auth_verifier",
+            side_effect=AuthConfigurationException("Unable to retrieve Supabase signing keys."),
         ):
             with patch("api.app.core.auth.logger") as logger_mock:
                 with self.assertRaises(AuthConfigurationException):
@@ -345,16 +372,16 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertIn("auth_configuration_or_jwks_failure", logger_mock.warning.call_args[0][1])
 
     def test_require_realtime_access_rejects_missing_permission(self) -> None:
-        settings.AUTH0_ENABLED = True
-        settings.AUTH0_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
 
         with self.assertRaises(AuthorizationException) as context:
             asyncio.run(require_realtime_access({"sub": "auth0|user", "scope": "route:read"}))
         self.assertEqual(context.exception.status_code, 403)
 
     def test_require_realtime_access_accepts_scope_or_permissions_claim(self) -> None:
-        settings.AUTH0_ENABLED = True
-        settings.AUTH0_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
 
         scope_claims = asyncio.run(
             require_realtime_access({"sub": "auth0|user", "scope": "route:read realtime:manage"})
@@ -369,7 +396,7 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(permission_claims["sub"], "auth0|user")
 
     def test_require_permissions_rejects_missing_permissions(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
         route_access_guard = require_permissions(("route:read", "route:write"))
 
         with self.assertRaises(AuthorizationException) as context:
@@ -379,7 +406,7 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertIn("route:write", context.exception.message)
 
     def test_authorize_claims_for_permissions_logs_missing_permissions(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
         request = Request(
             {
                 "type": "http",
@@ -402,7 +429,7 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertIn("missing_permissions", logger_mock.warning.call_args[0][1])
 
     def test_require_permissions_accepts_permission_from_scope_or_permissions_claim(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
         route_access_guard = require_permissions(("route:read",))
 
         scope_claims = asyncio.run(
@@ -416,7 +443,7 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(permissions_claims["sub"], "auth0|user")
 
     def test_require_permissions_rejects_empty_permission_configuration(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
         empty_guard = require_permissions(("", "   "))
 
         with self.assertRaises(AuthConfigurationException) as context:
@@ -425,7 +452,7 @@ class AuthDependencyTests(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 503)
 
     def test_authorize_claims_for_permissions_accepts_valid_permissions(self) -> None:
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
 
         claims = authorize_claims_for_permissions(
             {"sub": "auth0|user", "permissions": ["route:read"]},
@@ -437,11 +464,13 @@ class AuthDependencyTests(unittest.TestCase):
 
 class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
         self.original_auth0_enabled = settings.AUTH0_ENABLED
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
         settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 

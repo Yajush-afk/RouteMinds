@@ -155,7 +155,7 @@ The current backend authentication contract is:
 - authenticated plus `realtime:manage`: `GET /realtime/status`, `GET /api/v1/realtime/status`
 - authenticated plus `realtime:manage`: `POST /realtime/refresh`, `POST /api/v1/realtime/refresh`
 
-When `AUTH0_ENABLED=false`, backend auth dependencies are bypassed for local development.
+When `SUPABASE_AUTH_ENABLED=false`, backend auth dependencies are bypassed for local development.
 
 `GET /auth/me` is the backend diagnostic endpoint for verifying that a caller is authenticated and inspecting the normalized claims, scopes, and permissions seen by the API.
 
@@ -298,22 +298,22 @@ Core backend settings include:
 - `GTFS_RT_CACHE_MAX_AGE_SECONDS`
 - `GTFS_RT_SNAPSHOT_PATH`
 
-Auth0 settings include:
+Supabase auth settings include:
 
-- `AUTH0_ENABLED`
-- `AUTH0_DOMAIN`
-- `AUTH0_AUDIENCE`
-- `AUTH0_ISSUER`
-- `AUTH0_ALGORITHMS`
-- `AUTH0_REALTIME_REQUIRED_PERMISSION`
+- `SUPABASE_AUTH_ENABLED`
+- `SUPABASE_URL`
+- `SUPABASE_JWT_ISSUER`
+- `SUPABASE_JWT_AUDIENCE`
+- `SUPABASE_JWT_ALGORITHMS`
+- `SUPABASE_REALTIME_REQUIRED_PERMISSION`
 
-When `AUTH0_ENABLED=true`, the backend validates its Auth0 configuration at startup and fails early if:
+When `SUPABASE_AUTH_ENABLED=true`, the backend validates its Supabase JWT configuration at startup and fails early if:
 
-- `AUTH0_DOMAIN` is missing
-- `AUTH0_AUDIENCE` is missing
-- `AUTH0_REALTIME_REQUIRED_PERMISSION` is missing
-- `AUTH0_ISSUER` is not a valid `https://.../` tenant root
-- `AUTH0_ISSUER` points to a different host than `AUTH0_DOMAIN`
+- `SUPABASE_URL` is missing
+- `SUPABASE_JWT_AUDIENCE` is missing
+- `SUPABASE_REALTIME_REQUIRED_PERMISSION` is missing
+- `SUPABASE_JWT_ISSUER` is not a valid `https://.../auth/v1` issuer URL
+- `SUPABASE_JWT_ISSUER` points to a different host than `SUPABASE_URL`
 
 `CORS_ALLOW_ORIGINS` must be a comma-separated list of bare origins such as
 `http://localhost:5173,https://app.example.com`. Paths and query strings are rejected.
@@ -321,20 +321,20 @@ When `AUTH0_ENABLED=true`, the backend validates its Auth0 configuration at star
 Recommended development values:
 
 ```env
-AUTH0_ENABLED=true
-AUTH0_DOMAIN=your-tenant.us.auth0.com
-AUTH0_AUDIENCE=https://routeminds-api
-AUTH0_ISSUER=https://your-tenant.us.auth0.com/
-AUTH0_ALGORITHMS=RS256
-AUTH0_REALTIME_REQUIRED_PERMISSION=realtime:manage
+SUPABASE_AUTH_ENABLED=true
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_JWT_ISSUER=https://your-project-ref.supabase.co/auth/v1
+SUPABASE_JWT_AUDIENCE=authenticated
+SUPABASE_JWT_ALGORITHMS=RS256
+SUPABASE_REALTIME_REQUIRED_PERMISSION=realtime:manage
 CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
 Recommended production values:
 
-- set `AUTH0_ENABLED=true`
-- use the production Auth0 tenant or custom domain consistently in both `AUTH0_DOMAIN` and `AUTH0_ISSUER`
-- keep `AUTH0_ALGORITHMS=RS256` unless the tenant is explicitly configured otherwise
+- set `SUPABASE_AUTH_ENABLED=true`
+- use the production Supabase project origin consistently in both `SUPABASE_URL` and `SUPABASE_JWT_ISSUER`
+- keep `SUPABASE_JWT_ALGORITHMS=RS256` unless the project is explicitly configured otherwise
 - set `CORS_ALLOW_ORIGINS` only to your deployed frontend origins
 - do not leave localhost origins in production
 
@@ -349,7 +349,7 @@ Backend tests live in `api/tests/` and currently cover:
 - GTFS graph construction
 - route optimization API behavior
 - real-time enrichment API behavior
-- Auth0 configuration validation
+- Supabase auth configuration validation
 - auth dependency behavior, including malformed bearer headers, invalid audience, invalid issuer, expired tokens, and permission failures
 
 Auth-focused test commands:
@@ -361,28 +361,28 @@ conda run -n route_minds python -m unittest api.tests.test_route_optimization_ap
 conda run -n route_minds python -m unittest api.tests.test_realtime_enrichment_api
 ```
 
-Optional live Auth0 verification is available through an environment-gated integration test:
+Optional live Supabase verification is available through an environment-gated integration test:
 
 ```bash
-export ROUTEMINDS_AUTH0_TEST_BASE_URL=http://127.0.0.1:8000
-export ROUTEMINDS_AUTH0_TEST_ACCESS_TOKEN=<valid access token>
-export ROUTEMINDS_AUTH0_TEST_REALTIME_TOKEN=<token with realtime:manage>
-export ROUTEMINDS_AUTH0_TEST_INVALID_TOKEN=<known invalid token>
+export ROUTEMINDS_SUPABASE_TEST_BASE_URL=http://127.0.0.1:8000
+export ROUTEMINDS_SUPABASE_TEST_ACCESS_TOKEN=<valid access token>
+export ROUTEMINDS_SUPABASE_TEST_REALTIME_TOKEN=<token with realtime:manage>
+export ROUTEMINDS_SUPABASE_TEST_INVALID_TOKEN=<known invalid token>
 conda run -n route_minds python -m unittest api.tests.test_auth0_live_integration
 ```
 
-Only `ROUTEMINDS_AUTH0_TEST_BASE_URL` and `ROUTEMINDS_AUTH0_TEST_ACCESS_TOKEN` are required to enable the live suite. The realtime and invalid-token checks are skipped unless those extra variables are set.
+Only `ROUTEMINDS_SUPABASE_TEST_BASE_URL` and `ROUTEMINDS_SUPABASE_TEST_ACCESS_TOKEN` are required to enable the live suite. The realtime and invalid-token checks are skipped unless those extra variables are set.
 
 ## Auth Rollout
 
-Recommended rollout sequence for backend Auth0 enforcement:
+Recommended rollout sequence for backend Supabase JWT enforcement:
 
-1. Set and validate all Auth0 env vars in a development environment.
+1. Set and validate all Supabase auth env vars in a development environment.
 2. Start the backend and confirm `/health` stays public.
 3. Verify `/auth/me` returns `401` without a token and `200` with a valid token.
 4. Verify `/routes/optimize` returns `401` without a token and succeeds with a valid authenticated token.
 5. Verify `/realtime/status` and `/realtime/refresh` return `403` for tokens missing `realtime:manage` and `200` for tokens that include it.
-6. Run the local auth-focused unit suites and, when tenant credentials are available, the live Auth0 integration suite.
+6. Run the local auth-focused unit suites and, when project credentials are available, the live Supabase integration suite.
 7. Promote the same environment contract to your shared or production environment, limiting `CORS_ALLOW_ORIGINS` to deployed frontend origins only.
 
 ## Implementation Notes
@@ -392,7 +392,7 @@ Some important realities about the current codebase:
 - the backend is more mature than the frontend-backend integration
 - route optimization is based on predicted segment travel time, not static shortest distance
 - real-time support exists in the backend service layer, but depends on external GTFS-RT configuration and data availability
-- there is no database or deployment stack in the repo yet, and Auth0-backed API authentication currently protects selected endpoints
+- there is no database or deployment stack in the repo yet, and Supabase-backed API authentication currently protects selected endpoints
 
 ## Near-Term Direction
 

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react"
-import { motion, useReducedMotion } from "motion/react"
 import { useLocation, useNavigate } from "react-router-dom"
 
+import {
+  maskIdentifier,
+  parseIdentifier,
+  type ParsedIdentifier,
+} from "@/auth/identifier"
 import { useRouteMindsAuth } from "@/auth/Auth0ProviderWithNavigate"
 import { Button } from "@workspace/ui/components/button"
 import {
@@ -12,6 +16,12 @@ import {
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSeparator,
+  InputOTPSlot,
+} from "@workspace/ui/components/input-otp"
 import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
 import { AlertCircle, LoaderCircle } from "lucide-react"
@@ -44,7 +54,7 @@ function InlineAlert({
   title,
   message,
 }: {
-  tone?: "destructive" | "warning"
+  tone?: "destructive" | "warning" | "success"
   title: string
   message: string
 }) {
@@ -54,7 +64,9 @@ function InlineAlert({
         "rounded-xl border px-3 py-2 text-sm",
         tone === "warning"
           ? "border-amber-200 bg-amber-50 text-amber-800"
-          : "border-red-200 bg-red-50 text-red-700"
+          : tone === "success"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-red-200 bg-red-50 text-red-700"
       )}
     >
       <p className="flex items-center gap-2 font-medium">
@@ -66,26 +78,44 @@ function InlineAlert({
   )
 }
 
+function buildPendingIdentifier(
+  value: string,
+  kind: "email" | "sms"
+): ParsedIdentifier {
+  return { kind, value }
+}
+
+function buildCodeSentMessage(identifier: ParsedIdentifier) {
+  return `We sent a 6-digit code to ${maskIdentifier(identifier)}.`
+}
+
 export default function AuthEntryPanel() {
   const {
+    clearPendingIdentifier,
     configError,
     error,
     isAuthenticated,
     isConfigured,
     isLoading,
     loginWithGoogle,
+    pendingIdentifier,
+    pendingIdentifierKind,
     startPasswordless,
+    verifyOneTimePassword,
   } = useRouteMindsAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const prefersReducedMotion = useReducedMotion()
-  const [identifierInput, setIdentifierInput] = useState("")
+  const [identifierInput, setIdentifierInput] = useState(pendingIdentifier ?? "")
   const [identifierError, setIdentifierError] = useState<string | null>(null)
+  const [otpValue, setOtpValue] = useState("")
+  const [otpError, setOtpError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<
-    "continue" | "google" | null
+    "continue" | "google" | "verify" | "resend" | null
   >(null)
   const returnTo =
     new URLSearchParams(location.search).get("returnTo")?.trim() || "/map"
+  const hasPendingOtp = !!pendingIdentifier && !!pendingIdentifierKind
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -93,48 +123,114 @@ export default function AuthEntryPanel() {
     }
   }, [isAuthenticated, isLoading, navigate, returnTo])
 
+  useEffect(() => {
+    if (!pendingIdentifier || !pendingIdentifierKind) {
+      return
+    }
+
+    setIdentifierInput(pendingIdentifier)
+    setNotice(
+      `We sent a 6-digit code to ${maskIdentifier(
+        buildPendingIdentifier(pendingIdentifier, pendingIdentifierKind)
+      )}.`
+    )
+  }, [pendingIdentifier, pendingIdentifierKind])
+
   async function handleContinue() {
     setIdentifierError(null)
+    setOtpError(null)
+    setNotice(null)
     setPendingAction("continue")
 
     try {
       await startPasswordless(identifierInput, returnTo)
+      setOtpValue("")
+      setNotice(buildCodeSentMessage(parseIdentifier(identifierInput)))
     } catch (startError) {
-      setPendingAction(null)
       setIdentifierError(
         startError instanceof Error
           ? startError.message
           : "We could not send a one-time code."
       )
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleVerifyCode() {
+    setOtpError(null)
+    setPendingAction("verify")
+
+    try {
+      await verifyOneTimePassword(otpValue)
+    } catch (verifyError) {
+      setOtpError(
+        verifyError instanceof Error
+          ? verifyError.message
+          : "We could not verify that code."
+      )
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleResendCode() {
+    if (!pendingIdentifier) {
+      return
+    }
+
+    setOtpError(null)
+    setIdentifierError(null)
+    setNotice(null)
+    setPendingAction("resend")
+
+    try {
+      await startPasswordless(pendingIdentifier, returnTo)
+      setNotice(
+        buildCodeSentMessage(
+          buildPendingIdentifier(pendingIdentifier, pendingIdentifierKind)
+        )
+      )
+    } catch (resendError) {
+      setOtpError(
+        resendError instanceof Error
+          ? resendError.message
+          : "We could not resend the code."
+      )
+    } finally {
+      setPendingAction(null)
     }
   }
 
   async function handleGoogleAuth() {
     setPendingAction("google")
     setIdentifierError(null)
+    setOtpError(null)
 
     try {
       await loginWithGoogle(returnTo)
     } catch (googleError) {
-      setPendingAction(null)
       setIdentifierError(
         googleError instanceof Error
           ? googleError.message
           : "Google sign-in is unavailable."
       )
+    } finally {
+      setPendingAction(null)
     }
   }
 
-  const intro = "Enter your phone or email"
-  const pressProps = prefersReducedMotion
-    ? {}
-    : {
-        whileTap: { scale: 0.985, y: 1 },
-        transition: {
-          duration: 0.12,
-          ease: "easeOut" as const,
-        },
-      }
+  function handleUseAnotherIdentifier() {
+    clearPendingIdentifier()
+    setIdentifierInput("")
+    setOtpValue("")
+    setOtpError(null)
+    setNotice(null)
+  }
+
+  const intro = hasPendingOtp
+    ? "Enter the one-time code we just sent to finish signing in."
+    : "Enter your phone or email to receive a one-time code."
 
   return (
     <div
@@ -144,85 +240,181 @@ export default function AuthEntryPanel() {
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-8 flex flex-col gap-2">
           <h1 className="text-3xl font-medium text-[#161616]">
-            Welcome to RouteMinds
+            {hasPendingOtp ? "Confirm your code" : "Welcome to RouteMinds"}
           </h1>
           <p className="text-sm leading-6 text-[#5f5f5f]">{intro}</p>
         </div>
 
         <FieldGroup>
-          <Field data-invalid={!!identifierError}>
-            <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
-              Phone or email
-            </FieldLabel>
-            <Input
-              id="identifier"
-              autoComplete="email"
-              inputMode="email"
-              value={identifierInput}
-              onChange={(event) => setIdentifierInput(event.target.value)}
-              placeholder="+91 98765 43210"
-              aria-invalid={!!identifierError}
-              className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
-            />
-            <FieldDescription className="text-[#696965]">
-              We&apos;ll send you a one-time code on the next secure step.
-            </FieldDescription>
-            <FieldError>{identifierError}</FieldError>
-          </Field>
+          {!hasPendingOtp ? (
+            <>
+              <Field data-invalid={!!identifierError}>
+                <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
+                  Phone or email
+                </FieldLabel>
+                <Input
+                  id="identifier"
+                  autoComplete="email"
+                  inputMode="email"
+                  value={identifierInput}
+                  onChange={(event) => setIdentifierInput(event.target.value)}
+                  placeholder="+91 98765 43210 or name@example.com"
+                  aria-invalid={!!identifierError}
+                  className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
+                />
+                <FieldDescription className="text-[#696965]">
+                  We&apos;ll send a 6-digit sign-in code. New users are created
+                  automatically.
+                </FieldDescription>
+                <FieldError>{identifierError}</FieldError>
+              </Field>
 
-          <div className="flex flex-col gap-3">
-            <Button
-              asChild
-              type="button"
-              size="lg"
-              onClick={handleContinue}
-              disabled={!isConfigured || isLoading || pendingAction !== null}
-              className="cursor-pointer rounded-xl"
-            >
-              <motion.button {...pressProps}>
-                {pendingAction === "continue" ? (
+              <div className="flex flex-col gap-3">
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={handleContinue}
+                  disabled={!isConfigured || isLoading || pendingAction !== null}
+                  className="cursor-pointer rounded-xl"
+                >
+                  {pendingAction === "continue" ? (
+                    <LoaderCircle
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  ) : null}
+                  Continue
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs text-[#8a8a84]">or</span>
+                <Separator className="flex-1" />
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={handleGoogleAuth}
+                disabled={!isConfigured || isLoading || pendingAction !== null}
+                className="cursor-pointer rounded-xl border-[#cfcfc8] bg-white text-[#151515] shadow-[inset_0_0_0_1px_rgba(207,207,200,0.95)] hover:border-[#bdbdb5] hover:bg-[#f8f8f6] hover:text-[#151515]"
+              >
+                {pendingAction === "google" ? (
                   <LoaderCircle
                     data-icon="inline-start"
                     className="animate-spin"
                   />
-                ) : null}
-                Continue &rarr;
-              </motion.button>
-            </Button>
-          </div>
+                ) : (
+                  <GoogleIcon />
+                )}
+                Continue with Google
+              </Button>
+            </>
+          ) : (
+            <>
+              <Field data-invalid={!!otpError}>
+                <FieldLabel htmlFor="otp" className="text-[#1d1d1d]">
+                  Verification code
+                </FieldLabel>
+                <InputOTP
+                  id="otp"
+                  maxLength={6}
+                  value={otpValue}
+                  onChange={setOtpValue}
+                  aria-invalid={!!otpError}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                  </InputOTPGroup>
+                  <InputOTPSeparator />
+                  <InputOTPGroup>
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+                <FieldDescription className="text-[#696965]">
+                  {pendingIdentifier
+                    ? `Enter the code sent to ${maskIdentifier(
+                        buildPendingIdentifier(
+                          pendingIdentifier,
+                          pendingIdentifierKind
+                        )
+                      )}.`
+                    : "Enter the 6-digit code we sent you."}
+                </FieldDescription>
+                <FieldError>{otpError}</FieldError>
+              </Field>
 
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-[#8a8a84]">or</span>
-            <Separator className="flex-1" />
-          </div>
+              <div className="flex flex-col gap-3">
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={handleVerifyCode}
+                  disabled={
+                    !isConfigured ||
+                    isLoading ||
+                    pendingAction !== null ||
+                    otpValue.trim().length !== 6
+                  }
+                  className="cursor-pointer rounded-xl"
+                >
+                  {pendingAction === "verify" ? (
+                    <LoaderCircle
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  ) : null}
+                  Verify code
+                </Button>
 
-          <Button
-            asChild
-            type="button"
-            variant="outline"
-            size="lg"
-            onClick={handleGoogleAuth}
-            disabled={!isConfigured || isLoading || pendingAction !== null}
-            className="cursor-pointer rounded-xl border-[#cfcfc8] bg-white text-[#151515] shadow-[inset_0_0_0_1px_rgba(207,207,200,0.95)] hover:border-[#bdbdb5] hover:bg-[#f8f8f6] hover:text-[#151515]"
-          >
-            <motion.button {...pressProps}>
-              {pendingAction === "google" ? (
-                <LoaderCircle
-                  data-icon="inline-start"
-                  className="animate-spin"
-                />
-              ) : (
-                <GoogleIcon />
-              )}
-              Continue with Google
-            </motion.button>
-          </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={handleResendCode}
+                  disabled={!isConfigured || isLoading || pendingAction !== null}
+                  className="cursor-pointer rounded-xl"
+                >
+                  {pendingAction === "resend" ? (
+                    <LoaderCircle
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  ) : null}
+                  Resend code
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="lg"
+                  onClick={handleUseAnotherIdentifier}
+                  disabled={pendingAction !== null}
+                  className="cursor-pointer rounded-xl text-[#6d675a]"
+                >
+                  Use a different phone or email
+                </Button>
+              </div>
+            </>
+          )}
+
+          {notice ? (
+            <InlineAlert
+              tone="success"
+              title="Code sent"
+              message={notice}
+            />
+          ) : null}
 
           {configError ? (
             <InlineAlert
               tone="warning"
-              title="Auth0 is not configured"
+              title="Supabase is not configured"
               message={configError}
             />
           ) : null}
@@ -235,8 +427,8 @@ export default function AuthEntryPanel() {
           ) : null}
 
           <p className="text-xs leading-5 text-[#6d6d66]">
-            Your phone or email is used only to start Auth0&apos;s secure
-            passwordless login flow.
+            RouteMinds uses Supabase Auth for Google sign-in and one-time codes
+            over email or SMS.
           </p>
         </FieldGroup>
 

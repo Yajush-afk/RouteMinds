@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 from jwt import InvalidTokenError, PyJWKClient
 from jwt.exceptions import PyJWKClientError
 
-from api.app.core.config import normalize_auth0_domain, settings
+from api.app.core.config import settings
 from api.app.core.exceptions import (
     AuthConfigurationException,
     AuthenticationException,
@@ -61,39 +61,42 @@ def get_jwks_client(jwks_url: str) -> PyJWKClient:
     return PyJWKClient(jwks_url)
 
 
-class Auth0JWTVerifier:
+class SupabaseJWTVerifier:
     def __init__(
         self,
         *,
-        domain: str,
+        project_url: str,
         audience: str,
         issuer: str,
         algorithms: tuple[str, ...],
     ):
-        normalized_domain = normalize_auth0_domain(domain)
-        if not normalized_domain:
-            raise AuthConfigurationException("AUTH0_DOMAIN is not configured.")
+        normalized_project_url = project_url.strip().rstrip("/")
+        if not normalized_project_url:
+            raise AuthConfigurationException("SUPABASE_URL is not configured.")
         if not audience:
-            raise AuthConfigurationException("AUTH0_AUDIENCE is not configured.")
+            raise AuthConfigurationException("SUPABASE_JWT_AUDIENCE is not configured.")
+        normalized_issuer = issuer.strip().rstrip("/")
+        if not normalized_issuer:
+            raise AuthConfigurationException("SUPABASE_JWT_ISSUER is not configured.")
 
-        self.domain = normalized_domain
+        self.project_url = normalized_project_url
         self.audience = audience
-        self.issuer = issuer
+        self.issuer = normalized_issuer
         self.algorithms = algorithms
-        self.jwks_url = f"https://{self.domain}/.well-known/jwks.json"
+        self.jwks_url = f"{self.issuer}/.well-known/jwks.json"
 
     def verify_token(self, token: str) -> dict:
         try:
             signing_key = get_jwks_client(self.jwks_url).get_signing_key_from_jwt(token)
         except PyJWKClientError as exc:
             raise AuthConfigurationException(
-                "Unable to retrieve Auth0 signing keys."
+                "Unable to retrieve Supabase signing keys."
             ) from exc
         except InvalidTokenError as exc:
-            raise AuthenticationException("Invalid or expired Auth0 access token.") from exc
+            raise AuthenticationException("Invalid or expired Supabase access token.") from exc
         except Exception as exc:
             raise AuthConfigurationException(
-                "Auth0 token verification service is unavailable."
+                "Supabase token verification service is unavailable."
             ) from exc
 
         try:
@@ -105,10 +108,10 @@ class Auth0JWTVerifier:
                 issuer=self.issuer,
             )
         except InvalidTokenError as exc:
-            raise AuthenticationException("Invalid or expired Auth0 access token.") from exc
+            raise AuthenticationException("Invalid or expired Supabase access token.") from exc
         except Exception as exc:
             raise AuthConfigurationException(
-                "Auth0 token verification service is unavailable."
+                "Supabase token verification service is unavailable."
             ) from exc
 
 
@@ -160,7 +163,7 @@ def authorize_claims_for_permissions(
     message: str | None = None,
     request: Request | None = None,
 ) -> TokenClaims:
-    if not settings.AUTH0_ENABLED:
+    if not settings.auth_enabled:
         return claims
 
     normalized_permissions = resolve_required_permissions(required_permissions)
@@ -197,10 +200,10 @@ def authorize_claims_for_permissions(
 
 
 def get_realtime_required_permissions() -> tuple[str, ...]:
-    required_permission = settings.AUTH0_REALTIME_REQUIRED_PERMISSION.strip()
+    required_permission = settings.realtime_required_permission.strip()
     if not required_permission:
         raise AuthConfigurationException(
-            "AUTH0_REALTIME_REQUIRED_PERMISSION is not configured."
+            "SUPABASE_REALTIME_REQUIRED_PERMISSION is not configured."
         )
     return (required_permission,)
 
@@ -232,24 +235,31 @@ def require_permissions(
     return dependency
 
 @lru_cache(maxsize=1)
-def get_auth0_verifier() -> Auth0JWTVerifier:
-    issuer = settings.AUTH0_ISSUER.strip() or f"https://{normalize_auth0_domain(settings.AUTH0_DOMAIN)}/"
+def get_auth_verifier() -> SupabaseJWTVerifier:
+    issuer = settings.auth_jwt_issuer.strip()
     algorithms = tuple(
         value.strip()
-        for value in settings.AUTH0_ALGORITHMS.split(",")
+        for value in settings.auth_jwt_algorithms.split(",")
         if value.strip()
     ) or ("RS256",)
-    return Auth0JWTVerifier(
-        domain=settings.AUTH0_DOMAIN,
-        audience=settings.AUTH0_AUDIENCE,
+    return SupabaseJWTVerifier(
+        project_url=settings.auth_project_url,
+        audience=settings.auth_jwt_audience,
         issuer=issuer,
         algorithms=algorithms,
     )
 
+
+def get_auth0_verifier() -> SupabaseJWTVerifier:
+    return get_auth_verifier()
+
+
+get_auth0_verifier.cache_clear = get_auth_verifier.cache_clear  # type: ignore[attr-defined]
+
 async def require_auth(
     request: Request,
 ) -> TokenClaims:
-    if not settings.AUTH0_ENABLED:
+    if not settings.auth_enabled:
         return {"sub": "auth-disabled"}
 
     try:
@@ -263,7 +273,7 @@ async def require_auth(
         raise
 
     try:
-        verifier = get_auth0_verifier()
+        verifier = get_auth_verifier()
         return normalize_token_claims(verifier.verify_token(token))
     except AuthenticationException as exc:
         log_auth_warning(

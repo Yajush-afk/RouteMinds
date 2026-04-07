@@ -273,11 +273,13 @@ class StubRouteOptimizationApiService:
 
 class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
         self.original_auth0_enabled = settings.AUTH0_ENABLED
-        settings.AUTH0_ENABLED = True
+        settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
         settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 

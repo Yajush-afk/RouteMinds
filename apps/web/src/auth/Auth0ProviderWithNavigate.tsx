@@ -1,4 +1,4 @@
-import { Auth0Provider, type AppState, useAuth0 } from "@auth0/auth0-react"
+import type { Session, User } from "@supabase/supabase-js"
 import {
   createContext,
   type ReactNode,
@@ -6,12 +6,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from "react"
-import { useNavigate } from "react-router-dom"
 
-import { getAuth0Config, getAuth0ConfigError } from "@/auth/auth0-config"
-import { parseIdentifier } from "@/auth/identifier"
+import { parseIdentifier, type ParsedIdentifier } from "@/auth/identifier"
 import { setApiAccessTokenFactory } from "@/lib/api/client"
+import { createClient as createSupabaseClient } from "@/lib/supabase/client"
 
 type Props = {
   children: ReactNode
@@ -34,41 +34,20 @@ type RouteMindsAuthContextValue = {
   getAccessToken: () => Promise<string>
   startPasswordless: (identifier: string, returnTo: string) => Promise<void>
   loginWithGoogle: (returnTo: string) => Promise<void>
+  verifyOneTimePassword: (token: string) => Promise<void>
+  pendingIdentifier: string | null
+  pendingIdentifierKind: "email" | "sms" | null
+  clearPendingIdentifier: () => void
   logout: () => void
-}
-
-type AuthUserShape = {
-  email?: string
-  name?: string
-  picture?: string
-  sub?: string
-}
-
-type RouteMindsAppState = AppState & {
-  returnTo?: string
 }
 
 const RouteMindsAuthContext = createContext<RouteMindsAuthContextValue | null>(
   null
 )
 
-function getReturnTo(appState?: RouteMindsAppState) {
-  const returnTo = appState?.returnTo?.trim() || "/"
-  return returnTo.startsWith("/") ? returnTo : "/"
-}
-
-function toAuthUser(user: AuthUserShape | undefined): AuthUser | null {
-  if (!user) {
-    return null
-  }
-
-  return {
-    email: user.email,
-    name: user.name,
-    picture: user.picture,
-    sub: user.sub,
-  }
-}
+const PENDING_IDENTIFIER_STORAGE_KEY = "routeminds.pending-auth-identifier"
+const PENDING_RETURN_TO_STORAGE_KEY = "routeminds.pending-auth-return-to"
+let supabaseClient: ReturnType<typeof createSupabaseClient> | null = null
 
 function toAuthError(error: unknown) {
   if (!error) {
@@ -82,157 +61,364 @@ function toAuthError(error: unknown) {
   return new Error("Authentication failed.")
 }
 
-function createUnavailableAuthValue(
-  message: string
-): RouteMindsAuthContextValue {
-  const error = new Error(message)
-
-  async function rejectVoid(): Promise<void> {
-    throw error
-  }
-
-  async function rejectString(): Promise<string> {
-    throw error
+function toAuthUser(user: User | null): AuthUser | null {
+  if (!user) {
+    return null
   }
 
   return {
-    isConfigured: false,
-    configError: message,
-    isAuthenticated: false,
-    isLoading: false,
-    error: null,
-    user: null,
-    getAccessToken: rejectString,
-    startPasswordless: rejectVoid,
-    loginWithGoogle: rejectVoid,
-    logout() {},
+    email: user.email ?? undefined,
+    name:
+      typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name
+          : undefined,
+    picture:
+      typeof user.user_metadata?.avatar_url === "string"
+        ? user.user_metadata.avatar_url
+        : typeof user.user_metadata?.picture === "string"
+          ? user.user_metadata.picture
+          : undefined,
+    sub: user.id,
   }
 }
 
-function AuthStateBridge({
-  children,
-  config,
-}: Props & { config: NonNullable<ReturnType<typeof getAuth0Config>> }) {
-  const {
-    error,
-    getAccessTokenSilently,
-    isAuthenticated,
-    isLoading,
-    loginWithRedirect,
-    logout: auth0Logout,
-    user,
-  } = useAuth0()
+function readPendingIdentifier() {
+  if (typeof window === "undefined") {
+    return null
+  }
 
-  const getAccessToken = useCallback(async () => {
-    return getAccessTokenSilently({
-      authorizationParams: {
-        audience: config.audience,
-        scope: config.scope,
-      },
+  return window.sessionStorage.getItem(PENDING_IDENTIFIER_STORAGE_KEY)?.trim() || null
+}
+
+function writePendingIdentifier(identifier: ParsedIdentifier | null) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  if (!identifier) {
+    window.sessionStorage.removeItem(PENDING_IDENTIFIER_STORAGE_KEY)
+    return
+  }
+
+  window.sessionStorage.setItem(
+    PENDING_IDENTIFIER_STORAGE_KEY,
+    JSON.stringify(identifier)
+  )
+}
+
+function readPendingReturnTo() {
+  if (typeof window === "undefined") {
+    return "/map"
+  }
+
+  return window.sessionStorage.getItem(PENDING_RETURN_TO_STORAGE_KEY)?.trim() || "/map"
+}
+
+function writePendingReturnTo(returnTo: string | null) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  if (!returnTo) {
+    window.sessionStorage.removeItem(PENDING_RETURN_TO_STORAGE_KEY)
+    return
+  }
+
+  window.sessionStorage.setItem(PENDING_RETURN_TO_STORAGE_KEY, returnTo)
+}
+
+function getPendingIdentifierState() {
+  const rawValue = readPendingIdentifier()
+
+  if (!rawValue) {
+    return {
+      pendingIdentifier: null,
+      pendingIdentifierKind: null,
+    } as const
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as ParsedIdentifier
+    if (
+      parsed &&
+      (parsed.kind === "email" || parsed.kind === "sms") &&
+      typeof parsed.value === "string" &&
+      parsed.value.trim()
+    ) {
+      return {
+        pendingIdentifier: parsed.value,
+        pendingIdentifierKind: parsed.kind,
+      } as const
+    }
+  } catch {}
+
+  writePendingIdentifier(null)
+
+  return {
+    pendingIdentifier: null,
+    pendingIdentifierKind: null,
+  } as const
+}
+
+function getSupabaseConfigError() {
+  try {
+    getSupabaseClient()
+    return null
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "Supabase configuration is unavailable."
+  }
+}
+
+function getSupabaseClient() {
+  if (!supabaseClient) {
+    supabaseClient = createSupabaseClient()
+  }
+
+  return supabaseClient
+}
+
+export default function Auth0ProviderWithNavigate({ children }: Props) {
+  const configError = getSupabaseConfigError()
+  const [{ pendingIdentifier, pendingIdentifierKind }, setPendingIdentifierState] =
+    useState(() => getPendingIdentifierState())
+  const [session, setSession] = useState<Session | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+
+  const clearPendingIdentifier = useCallback(() => {
+    writePendingIdentifier(null)
+    writePendingReturnTo(null)
+    setPendingIdentifierState({
+      pendingIdentifier: null,
+      pendingIdentifierKind: null,
     })
-  }, [config.audience, config.scope, getAccessTokenSilently])
+  }, [])
 
   useEffect(() => {
-    setApiAccessTokenFactory(() =>
-      getAccessTokenSilently({
-        authorizationParams: {
-          audience: config.audience,
-          scope: config.scope,
-        },
+    if (configError) {
+      setIsLoading(false)
+      setSession(null)
+      setError(null)
+      setApiAccessTokenFactory(null)
+      return
+    }
+
+    const supabase = getSupabaseClient()
+    let isActive = true
+
+    void supabase.auth
+      .getSession()
+      .then(({ data, error: sessionError }) => {
+        if (!isActive) {
+          return
+        }
+
+        if (sessionError) {
+          setError(sessionError)
+        } else {
+          setError(null)
+          setSession(data.session)
+          setApiAccessTokenFactory(
+            data.session?.access_token
+              ? async () => data.session.access_token
+              : null
+          )
+        }
+
+        setIsLoading(false)
       })
-    )
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isActive) {
+        return
+      }
+
+      setSession(nextSession)
+      setIsLoading(false)
+      setError(null)
+
+      if (nextSession?.access_token) {
+        setApiAccessTokenFactory(async () => nextSession.access_token)
+        clearPendingIdentifier()
+      } else {
+        setApiAccessTokenFactory(null)
+      }
+    })
 
     return () => {
+      isActive = false
+      subscription.unsubscribe()
       setApiAccessTokenFactory(null)
     }
-  }, [config.audience, config.scope, getAccessTokenSilently])
+  }, [clearPendingIdentifier, configError])
+
+  const getAccessToken = useCallback(async () => {
+    const supabase = getSupabaseClient()
+    const { data, error } = await supabase.auth.getSession()
+
+    if (error) {
+      throw error
+    }
+
+    const accessToken = data.session?.access_token?.trim()
+
+    if (!accessToken) {
+      throw new Error("Authenticated API access is not available.")
+    }
+
+    return accessToken
+  }, [])
 
   const startPasswordless = useCallback<
     RouteMindsAuthContextValue["startPasswordless"]
-  >(
-    async (rawIdentifier, returnTo) => {
-      const identifier = parseIdentifier(rawIdentifier)
+  >(async (rawIdentifier, returnTo) => {
+    const supabase = getSupabaseClient()
+    const identifier = parseIdentifier(rawIdentifier)
 
-      await loginWithRedirect({
-        appState: { returnTo },
-        authorizationParams: {
-          audience: config.audience,
-          connection:
-            identifier.kind === "email"
-              ? config.emailConnection
-              : config.smsConnection,
-          login_hint: identifier.value,
-          redirect_uri: config.redirectUri,
-          scope: config.scope,
-        },
-      })
-    },
-    [
-      config.audience,
-      config.emailConnection,
-      config.redirectUri,
-      config.scope,
-      config.smsConnection,
-      loginWithRedirect,
-    ]
-  )
+    setError(null)
+
+    const { error } =
+      identifier.kind === "email"
+        ? await supabase.auth.signInWithOtp({
+            email: identifier.value,
+            options: {
+              emailRedirectTo: `${window.location.origin}/auth?returnTo=${encodeURIComponent(returnTo)}`,
+              shouldCreateUser: true,
+            },
+          })
+        : await supabase.auth.signInWithOtp({
+            phone: identifier.value,
+            options: {
+              channel: "sms",
+              shouldCreateUser: true,
+            },
+          })
+
+    if (error) {
+      setError(error)
+      throw error
+    }
+
+    writePendingIdentifier(identifier)
+    writePendingReturnTo(returnTo)
+    setPendingIdentifierState({
+      pendingIdentifier: identifier.value,
+      pendingIdentifierKind: identifier.kind,
+    })
+  }, [])
+
+  const verifyOneTimePassword = useCallback<
+    RouteMindsAuthContextValue["verifyOneTimePassword"]
+  >(async (token) => {
+    const supabase = getSupabaseClient()
+    const identifierState = getPendingIdentifierState()
+
+    if (
+      !identifierState.pendingIdentifier ||
+      !identifierState.pendingIdentifierKind
+    ) {
+      throw new Error("Start sign-in first so we know where to verify the code.")
+    }
+
+    const normalizedToken = token.trim()
+
+    if (normalizedToken.length !== 6) {
+      throw new Error("Enter the 6-digit code we sent you.")
+    }
+
+    setError(null)
+
+    const { error } =
+      identifierState.pendingIdentifierKind === "email"
+        ? await supabase.auth.verifyOtp({
+            email: identifierState.pendingIdentifier,
+            token: normalizedToken,
+            type: "email",
+            options: {
+              redirectTo: `${window.location.origin}${readPendingReturnTo()}`,
+            },
+          })
+        : await supabase.auth.verifyOtp({
+            phone: identifierState.pendingIdentifier,
+            token: normalizedToken,
+            type: "sms",
+            options: {
+              redirectTo: `${window.location.origin}${readPendingReturnTo()}`,
+            },
+          })
+
+    if (error) {
+      setError(error)
+      throw error
+    }
+
+    clearPendingIdentifier()
+  }, [clearPendingIdentifier])
 
   const loginWithGoogle = useCallback<
     RouteMindsAuthContextValue["loginWithGoogle"]
-  >(
-    async (returnTo) => {
-      await loginWithRedirect({
-        appState: { returnTo },
-        authorizationParams: {
-          audience: config.audience,
-          ...(config.googleConnection
-            ? { connection: config.googleConnection }
-            : {}),
-          redirect_uri: config.redirectUri,
-          scope: config.scope,
-        },
-      })
-    },
-    [
-      config.audience,
-      config.googleConnection,
-      config.redirectUri,
-      config.scope,
-      loginWithRedirect,
-    ]
-  )
+  >(async (returnTo) => {
+    const supabase = getSupabaseClient()
+    setError(null)
+    writePendingReturnTo(returnTo)
 
-  const logout = useCallback(() => {
-    setApiAccessTokenFactory(null)
-    auth0Logout({
-      logoutParams: {
-        returnTo: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth?returnTo=${encodeURIComponent(returnTo)}`,
       },
     })
-  }, [auth0Logout])
+
+    if (error) {
+      writePendingReturnTo(null)
+      setError(error)
+      throw error
+    }
+  }, [])
+
+  const logout = useCallback(() => {
+    const supabase = getSupabaseClient()
+    clearPendingIdentifier()
+    setApiAccessTokenFactory(null)
+    void supabase.auth.signOut()
+  }, [clearPendingIdentifier])
 
   const value = useMemo<RouteMindsAuthContextValue>(
     () => ({
-      isConfigured: true,
-      configError: null,
-      isAuthenticated,
+      isConfigured: !configError,
+      configError,
+      isAuthenticated: !!session?.user,
       isLoading,
-      error: toAuthError(error),
-      user: toAuthUser(user as AuthUserShape | undefined),
+      error,
+      user: toAuthUser(session?.user ?? null),
       getAccessToken,
       startPasswordless,
       loginWithGoogle,
+      verifyOneTimePassword,
+      pendingIdentifier,
+      pendingIdentifierKind,
+      clearPendingIdentifier,
       logout,
     }),
     [
+      clearPendingIdentifier,
+      configError,
       error,
       getAccessToken,
-      isAuthenticated,
       isLoading,
       loginWithGoogle,
-      logout,
+      pendingIdentifier,
+      pendingIdentifierKind,
+      session,
       startPasswordless,
-      user,
+      verifyOneTimePassword,
+      logout,
     ]
   )
 
@@ -240,43 +426,6 @@ function AuthStateBridge({
     <RouteMindsAuthContext.Provider value={value}>
       {children}
     </RouteMindsAuthContext.Provider>
-  )
-}
-
-export default function Auth0ProviderWithNavigate({ children }: Props) {
-  const navigate = useNavigate()
-  const config = getAuth0Config()
-  const configError = getAuth0ConfigError()
-
-  if (!config) {
-    return (
-      <RouteMindsAuthContext.Provider
-        value={createUnavailableAuthValue(
-          configError ?? "Auth0 configuration is unavailable."
-        )}
-      >
-        {children}
-      </RouteMindsAuthContext.Provider>
-    )
-  }
-
-  return (
-    <Auth0Provider
-      domain={config.domain}
-      clientId={config.clientId}
-      authorizationParams={{
-        audience: config.audience,
-        redirect_uri: config.redirectUri,
-        scope: config.scope,
-      }}
-      onRedirectCallback={(appState) => {
-        navigate(getReturnTo(appState as RouteMindsAppState), {
-          replace: true,
-        })
-      }}
-    >
-      <AuthStateBridge config={config}>{children}</AuthStateBridge>
-    </Auth0Provider>
   )
 }
 
