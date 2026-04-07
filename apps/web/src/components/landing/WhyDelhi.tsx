@@ -46,7 +46,7 @@ export default function WhyDelhiSection() {
       className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
       <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 sm:gap-12 md:grid-cols-2 md:gap-16">
-        {/* Left - Image */}
+        
         <div className="relative overflow-hidden rounded-2xl shadow-lg">
           <img
             src={delhiTraffic}
@@ -65,7 +65,6 @@ export default function WhyDelhiSection() {
           </div>
         </div>
 
-        {/* Right - Content */}
         <div className="space-y-8 sm:space-y-10">
           <div>
             <p className="font-body mb-3 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">

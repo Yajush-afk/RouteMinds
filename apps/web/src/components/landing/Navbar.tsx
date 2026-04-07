@@ -21,7 +21,7 @@ export default function Navbar() {
     <nav className="w-full px-4 py-4 sm:px-6 md:px-10 lg:px-24"
     style={{ backgroundColor: "#fef3c7" }}>
       <div className="mx-auto flex max-w-7xl items-center justify-between">
-        {/* Logo */}
+        
         <Link
           to="/"
           className="font-heading text-base tracking-tight text-foreground sm:text-lg md:text-xl"
@@ -29,35 +29,34 @@ export default function Navbar() {
           RouteMinds
         </Link>
 
-        {/* Nav links */}
         <div className="hidden items-center gap-8 md:flex">
           <a
             href="#about"
-            className="font-body text-sm text-foreground transition-colors hover:text-foreground/70"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             About
           </a>
           <a
             href="#features"
-            className="font-body text-sm text-foreground transition-colors hover:text-foreground/70"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             Features
           </a>
           <a
             href="#why-delhi"
-            className="font-body text-sm text-foreground transition-colors hover:text-foreground/70"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             Why Delhi?
           </a>
           <a
             href="#faqs"
-            className="font-body text-sm text-foreground transition-colors hover:text-foreground/70"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             FAQs
           </a>
         </div>
 
-        {/* GitHub Botton  */}
+       
         <div className="flex items-center gap-2">
           <Button
                 asChild
@@ -78,7 +77,7 @@ export default function Navbar() {
                   GitHub
                 </a>
               </Button>
-           {/* Get Started button */}
+          
               <Button
                 asChild
                 className="font-body rounded-[12px] landing-hover-lift bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300" >
@@ -87,7 +86,6 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Bottom separator line */}
       <div className="mx-auto mt-4 max-w-7xl border-t border-border" />
     </nav>
   )

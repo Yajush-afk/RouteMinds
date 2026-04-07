@@ -49,15 +49,13 @@ const Feature = ({
         index >= 2 && "border-t",
       )}
     >
-      {/* Full-box hover background */}
-{/* Full-box hover background */}
+      
 <div className="opacity-0 group-hover/feature:opacity-100 transition duration-200 absolute inset-0 bg-gradient-to-br from-[#fef3c7]/50 to-transparent pointer-events-none" />
       {/* Icon */}
       <div className="mb-4 relative z-10 text-[#5a2d14]">
         {icon}
       </div>
 
-      {/* Title with animated left bar */}
       <div className="text-base font-semibold mb-3 relative z-10">
         <div className="absolute -left-8 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-border group-hover/feature:bg-[#5a2d14] transition-all duration-200 origin-center" />
         <span className="group-hover/feature:translate-x-2 transition duration-200 inline-block font-heading text-foreground">
@@ -65,7 +63,6 @@ const Feature = ({
         </span>
       </div>
 
-      {/* Description */}
       <p className="font-body text-sm leading-relaxed text-muted-foreground max-w-xs relative z-10">
         {description}
       </p>
@@ -81,7 +78,6 @@ export default function FeaturesSectionGrid() {
     >
       <div className="mx-auto max-w-7xl">
 
-        {/* Section header */}
         <div className="mb-20 flex flex-col items-center text-center sm:mb-28">
           <p className="font-body mb-4 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
             What We Offer
@@ -94,7 +90,6 @@ export default function FeaturesSectionGrid() {
           </p>
         </div>
 
-        {/* Grid wrapped in border box */}
         <div className="border border-border rounded-2xl overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-2">
             {features.map((feature, index) => (
