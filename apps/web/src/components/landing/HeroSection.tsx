@@ -21,7 +21,7 @@ export default function HeroSection() {
     <section
       id="about"
       className=" px-4 pt-24 pb-16 sm:px-6 sm:pt-28 sm:pb-20 md:px-10 md:pt-32 lg:px-24"
-      style={{ background: "linear-gradient(to bottom, #fef3c7, white)" }}
+      style={{ background: "linear-gradient(to bottom,white, #fefce8 , white)" }}
     >
       <div className="mx-auto mt-12 grid w-full max-w-7xl grid-cols-1 items-center gap-10 sm:mt-16 sm:gap-12 md:mt-24 md:grid-cols-2 md:gap-16">
         {/* Left Side */}

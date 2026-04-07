@@ -19,7 +19,7 @@ export default function Navbar() {
 
   return (
     <nav className="w-full px-4 py-4 sm:px-6 md:px-10 lg:px-24"
-    style={{ backgroundColor: "#fef3c7" }}>
+    style={{ backgroundColor: "white" }}>
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         
         <Link
