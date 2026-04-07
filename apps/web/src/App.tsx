@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom"
 
 const LandingPage = lazy(() => import("@/pages/LandingPage"))
 const MapPage = lazy(() => import("@/pages/MapPage"))
+const AuthPage = lazy(() => import("@/pages/AuthPage"))
 
 function RouteFallback() {
   return (
@@ -17,7 +18,7 @@ export function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/auth" element={<Navigate to="/map" replace />} />
+        <Route path="/auth" element={<AuthPage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

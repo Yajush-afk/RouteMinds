@@ -68,14 +68,14 @@ export default function Navbar() {
             variant="ghost"
             className="rounded-xl px-4 text-sm text-foreground hover:bg-transparent hover:text-[var(--landing-primary)]"
           >
-            <Link to="/map">Open Map</Link>
+            <Link to="/auth">Log In</Link>
           </Button>
           <Button
             asChild
             variant="outline"
             className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
           >
-            <Link to="/map">Get Started</Link>
+            <Link to="/auth">Get Started</Link>
           </Button>
         </div>
       </div>
