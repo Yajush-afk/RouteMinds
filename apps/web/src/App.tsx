@@ -1,8 +1,6 @@
 import { Suspense, lazy } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 
-import ProtectedRoute from "@/auth/ProtectedRoute"
-
 const LandingPage = lazy(() => import("@/pages/LandingPage"))
 const MapPage = lazy(() => import("@/pages/MapPage"))
 const AuthPage = lazy(() => import("@/pages/AuthPage"))
@@ -21,9 +19,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
-        <Route element={<ProtectedRoute />}>
-          <Route path="/map" element={<MapPage />} />
-        </Route>
+        <Route path="/map" element={<MapPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>

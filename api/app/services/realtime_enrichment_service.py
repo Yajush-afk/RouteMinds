@@ -9,9 +9,14 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock, RLock
 
 import httpx
-from google.transit import gtfs_realtime_pb2
+
+try:
+    from google.transit import gtfs_realtime_pb2
+except ImportError:
+    gtfs_realtime_pb2 = None
 
 from api.app.core.config import REPO_ROOT, settings
 from api.app.core.exceptions import GTFSRealtimeException, GTFSStaticDataException
@@ -349,6 +354,11 @@ class GTFSRealtimeIngestionService:
             self.last_malformed_record_count = 0
             return []
 
+        if gtfs_realtime_pb2 is None:
+            raise GTFSRealtimeException(
+                "GTFS real-time protobuf support requires the 'gtfs-realtime-bindings' package."
+            )
+
         feed = gtfs_realtime_pb2.FeedMessage()
         try:
             feed.ParseFromString(payload)
@@ -418,6 +428,8 @@ class RealtimeEnrichmentService:
         self.last_refresh_time: int | None = None
         self.last_successful_refresh_time: int | None = None
         self.latest_snapshot_time: int | None = None
+        self._refresh_lock = Lock()
+        self._state_lock = RLock()
         self.last_refresh_result = RefreshResult(
             fetched_snapshots=0,
             enriched_segments=0,
@@ -433,64 +445,69 @@ class RealtimeEnrichmentService:
         )
 
     def refresh_vehicle_positions(self) -> dict[str, int | bool | str | None]:
-        now = int(time.time())
-        self.last_refresh_time = now
-        unmatched_vehicle_ids: set[str] = set()
-        unmatched_trip_ids: set[str] = set()
+        with self._refresh_lock:
+            now = int(time.time())
+            with self._state_lock:
+                self.last_refresh_time = now
 
-        try:
-            snapshots = self.ingestion_service.fetch_vehicle_positions()
-        except GTFSRealtimeException as exc:
-            self.last_refresh_result = RefreshResult(
-                fetched_snapshots=0,
-                enriched_segments=0,
-                latest_snapshot_time=self.latest_snapshot_time,
-                unmatched_snapshots=0,
-                unmatched_trips=0,
-                unmatched_vehicles=0,
-                malformed_records=self.ingestion_service.last_malformed_record_count,
-                provider_format=self.ingestion_service.last_provider_format,
-                auth_mode=self.ingestion_service._resolve_auth_mode(),
-                last_refresh_successful=False,
-                last_refresh_error=str(exc),
-            )
-            raise
+            unmatched_vehicle_ids: set[str] = set()
+            unmatched_trip_ids: set[str] = set()
 
-        enriched_count = 0
-        latest_snapshot_time: int | None = None
-        unmatched_snapshots = 0
+            try:
+                snapshots = self.ingestion_service.fetch_vehicle_positions()
+            except GTFSRealtimeException as exc:
+                with self._state_lock:
+                    self.last_refresh_result = RefreshResult(
+                        fetched_snapshots=0,
+                        enriched_segments=0,
+                        latest_snapshot_time=self.latest_snapshot_time,
+                        unmatched_snapshots=0,
+                        unmatched_trips=0,
+                        unmatched_vehicles=0,
+                        malformed_records=self.ingestion_service.last_malformed_record_count,
+                        provider_format=self.ingestion_service.last_provider_format,
+                        auth_mode=self.ingestion_service._resolve_auth_mode(),
+                        last_refresh_successful=False,
+                        last_refresh_error=str(exc),
+                    )
+                raise
 
-        for snapshot in snapshots:
-            latest_snapshot_time = (
-                snapshot.snapshot_time
-                if latest_snapshot_time is None
-                else max(latest_snapshot_time, snapshot.snapshot_time)
-            )
-            ingest_outcome = self._ingest_snapshot(snapshot)
-            if ingest_outcome == "enriched":
-                enriched_count += 1
-                continue
-            unmatched_snapshots += 1
-            unmatched_vehicle_ids.add(snapshot.vehicle_id)
-            if snapshot.trip_id:
-                unmatched_trip_ids.add(snapshot.trip_id)
+            enriched_count = 0
+            latest_snapshot_time: int | None = None
+            unmatched_snapshots = 0
 
-        self.latest_snapshot_time = latest_snapshot_time
-        self.last_successful_refresh_time = now
-        self.last_refresh_result = RefreshResult(
-            fetched_snapshots=len(snapshots),
-            enriched_segments=enriched_count,
-            latest_snapshot_time=latest_snapshot_time,
-            unmatched_snapshots=unmatched_snapshots,
-            unmatched_trips=len(unmatched_trip_ids),
-            unmatched_vehicles=len(unmatched_vehicle_ids),
-            malformed_records=self.ingestion_service.last_malformed_record_count,
-            provider_format=self.ingestion_service.last_provider_format,
-            auth_mode=self.ingestion_service._resolve_auth_mode(),
-            last_refresh_successful=True,
-            last_refresh_error=None,
-        )
-        return asdict(self.last_refresh_result)
+            with self._state_lock:
+                for snapshot in snapshots:
+                    latest_snapshot_time = (
+                        snapshot.snapshot_time
+                        if latest_snapshot_time is None
+                        else max(latest_snapshot_time, snapshot.snapshot_time)
+                    )
+                    ingest_outcome = self._ingest_snapshot(snapshot)
+                    if ingest_outcome == "enriched":
+                        enriched_count += 1
+                        continue
+                    unmatched_snapshots += 1
+                    unmatched_vehicle_ids.add(snapshot.vehicle_id)
+                    if snapshot.trip_id:
+                        unmatched_trip_ids.add(snapshot.trip_id)
+
+                self.latest_snapshot_time = latest_snapshot_time
+                self.last_successful_refresh_time = now
+                self.last_refresh_result = RefreshResult(
+                    fetched_snapshots=len(snapshots),
+                    enriched_segments=enriched_count,
+                    latest_snapshot_time=latest_snapshot_time,
+                    unmatched_snapshots=unmatched_snapshots,
+                    unmatched_trips=len(unmatched_trip_ids),
+                    unmatched_vehicles=len(unmatched_vehicle_ids),
+                    malformed_records=self.ingestion_service.last_malformed_record_count,
+                    provider_format=self.ingestion_service.last_provider_format,
+                    auth_mode=self.ingestion_service._resolve_auth_mode(),
+                    last_refresh_successful=True,
+                    last_refresh_error=None,
+                )
+                return asdict(self.last_refresh_result)
 
     def get_segment_live_context(
         self,
@@ -500,7 +517,8 @@ class RealtimeEnrichmentService:
         reference_timestamp: int | None = None,
     ) -> SegmentLiveContext | None:
         key = (str(route_id), str(from_stop_id), str(to_stop_id))
-        context = self.segment_live_context.get(key)
+        with self._state_lock:
+            context = self.segment_live_context.get(key)
         if context is None:
             return None
         reference_timestamp = reference_timestamp or int(time.time())
@@ -512,27 +530,28 @@ class RealtimeEnrichmentService:
         configured = bool(
             self.ingestion_service.vehicle_positions_url and self.ingestion_service.api_key
         )
-        status = RealtimeOperationalStatus(
-            configured=configured,
-            last_refresh_time=self.last_refresh_time,
-            last_successful_refresh_time=self.last_successful_refresh_time,
-            latest_snapshot_time=self.latest_snapshot_time,
-            fetched_snapshots=self.last_refresh_result.fetched_snapshots,
-            enriched_segments=self.last_refresh_result.enriched_segments,
-            unmatched_snapshots=self.last_refresh_result.unmatched_snapshots,
-            unmatched_trips=self.last_refresh_result.unmatched_trips,
-            unmatched_vehicles=self.last_refresh_result.unmatched_vehicles,
-            malformed_records=self.last_refresh_result.malformed_records,
-            cached_segments=len(self.segment_live_context),
-            cached_vehicles=len(self.latest_vehicle_snapshot),
-            cache_max_age_seconds=self.cache_max_age_seconds,
-            cache_is_fresh=self._cache_is_fresh(),
-            provider_format=self.last_refresh_result.provider_format,
-            auth_mode=self.last_refresh_result.auth_mode,
-            last_refresh_successful=self.last_refresh_result.last_refresh_successful,
-            last_refresh_error=self.last_refresh_result.last_refresh_error,
-        )
-        return asdict(status)
+        with self._state_lock:
+            status = RealtimeOperationalStatus(
+                configured=configured,
+                last_refresh_time=self.last_refresh_time,
+                last_successful_refresh_time=self.last_successful_refresh_time,
+                latest_snapshot_time=self.latest_snapshot_time,
+                fetched_snapshots=self.last_refresh_result.fetched_snapshots,
+                enriched_segments=self.last_refresh_result.enriched_segments,
+                unmatched_snapshots=self.last_refresh_result.unmatched_snapshots,
+                unmatched_trips=self.last_refresh_result.unmatched_trips,
+                unmatched_vehicles=self.last_refresh_result.unmatched_vehicles,
+                malformed_records=self.last_refresh_result.malformed_records,
+                cached_segments=len(self.segment_live_context),
+                cached_vehicles=len(self.latest_vehicle_snapshot),
+                cache_max_age_seconds=self.cache_max_age_seconds,
+                cache_is_fresh=self._cache_is_fresh(),
+                provider_format=self.last_refresh_result.provider_format,
+                auth_mode=self.last_refresh_result.auth_mode,
+                last_refresh_successful=self.last_refresh_result.last_refresh_successful,
+                last_refresh_error=self.last_refresh_result.last_refresh_error,
+            )
+            return asdict(status)
 
     def _cache_is_fresh(self, reference_timestamp: int | None = None) -> bool:
         if self.latest_snapshot_time is None:
@@ -645,7 +664,7 @@ class RealtimeEnrichmentService:
                     to_event.arrival_seconds,
                 )
                 best_candidate = SegmentObservation(
-                    route_id=snapshot.route_id,
+                    route_id=to_event.route_id,
                     from_stop_id=from_event.stop_id,
                     to_stop_id=to_event.stop_id,
                     delay_minutes=(

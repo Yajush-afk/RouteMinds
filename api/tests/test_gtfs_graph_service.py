@@ -69,7 +69,28 @@ class GTFSGraphServiceTests(unittest.TestCase):
         self.assertEqual(first_edge.stop_sequence, 1)
         self.assertAlmostEqual(first_edge.normalized_stop_position, 0.5)
         self.assertAlmostEqual(first_edge.scheduled_segment_minutes, 5.0)
+        self.assertEqual(first_edge.scheduled_departure_seconds, (8 * 3600,))
         self.assertGreater(first_edge.distance_to_prev_stop_km, 0.0)
+
+    def test_builds_same_graph_when_stop_times_are_unsorted(self) -> None:
+        write_csv(
+            self.gtfs_dir / "stop_times.txt",
+            ["trip_id", "arrival_time", "departure_time", "stop_id", "stop_sequence"],
+            [
+                ["TRIP_1", "08:10:00", "08:10:00", "STOP_C", "2"],
+                ["TRIP_1", "08:00:00", "08:00:00", "STOP_A", "0"],
+                ["TRIP_1", "08:05:00", "08:05:00", "STOP_B", "1"],
+            ],
+        )
+
+        service = GTFSGraphService(self.gtfs_dir)
+        graph = service.get_graph()
+
+        self.assertEqual(graph.edge_count, 2)
+        outgoing = graph.get_outgoing_edges("STOP_A")
+        self.assertEqual(len(outgoing), 1)
+        self.assertEqual(outgoing[0].to_stop_id, "STOP_B")
+        self.assertEqual(outgoing[0].scheduled_departure_seconds, (8 * 3600,))
 
     def test_graph_builder_is_cached_for_same_directory(self) -> None:
         service = GTFSGraphService(self.gtfs_dir)

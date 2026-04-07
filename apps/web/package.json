@@ -14,7 +14,6 @@
   "dependencies": {
     "@tabler/icons-react": "^3.41.1",
     "@workspace/ui": "workspace:*",
-    "auth0-js": "^9.32.0",
     "lucide-react": "^0.577.0",
     "maplibre-gl": "^5.20.2",
     "motion": "^12.38.0",

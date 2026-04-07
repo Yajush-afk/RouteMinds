@@ -134,11 +134,15 @@ The FastAPI app exposes the following routes under `/api/v1`:
 
 - `GET /api/v1/health`
 - `POST /api/v1/predictions/segments`
+- `GET /api/v1/stops/nearby`
 - `POST /api/v1/routes/optimize`
 - `POST /api/v1/realtime/refresh`
 - `GET /api/v1/realtime/status`
 
 There is also a root route at `GET /` that returns app metadata and a docs pointer.
+
+The backend also exposes unversioned aliases for the current API surface such as
+`/health`, `/stops/nearby`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
 
 ### Prediction Request Shape
 
@@ -257,7 +261,7 @@ Detailed notes are available in `api/TRAINING.md`.
 
 The backend reads configuration from environment variables and `.env`.
 
-Important settings include:
+Core backend settings include:
 
 - `MODEL_PATH`
 - `SCHEMA_PATH`
@@ -271,6 +275,20 @@ Important settings include:
 - `GTFS_RT_CACHE_MAX_AGE_SECONDS`
 - `GTFS_RT_SNAPSHOT_PATH`
 
+`CORS_ALLOW_ORIGINS` must be a comma-separated list of bare origins such as
+`http://localhost:5173,https://app.example.com`. Paths and query strings are rejected.
+
+Recommended development values:
+
+```env
+CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+Recommended production values:
+
+- set `CORS_ALLOW_ORIGINS` only to your deployed frontend origins
+- do not leave localhost origins in production
+
 If GTFS real-time settings are not configured, the real-time endpoints will not be operational.
 
 ## Testing
@@ -283,6 +301,14 @@ Backend tests live in `api/tests/` and currently cover:
 - route optimization API behavior
 - real-time enrichment API behavior
 
+API-focused test commands:
+
+```bash
+conda run -n route_minds python -m unittest api.tests.test_config
+conda run -n route_minds python -m unittest api.tests.test_route_optimization_api
+conda run -n route_minds python -m unittest api.tests.test_realtime_enrichment_api
+```
+
 ## Implementation Notes
 
 Some important realities about the current codebase:
@@ -290,7 +316,7 @@ Some important realities about the current codebase:
 - the backend is more mature than the frontend-backend integration
 - route optimization is based on predicted segment travel time, not static shortest distance
 - real-time support exists in the backend service layer, but depends on external GTFS-RT configuration and data availability
-- there is no database, authentication layer, or deployment stack in the repo yet
+- there is no database or deployment stack in the repo yet
 
 ## Near-Term Direction
 

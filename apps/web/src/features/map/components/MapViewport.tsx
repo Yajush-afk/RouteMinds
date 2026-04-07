@@ -4,31 +4,32 @@ import type { MapRef } from "react-map-gl/maplibre"
 import MapCameraController from "@/features/map/components/MapCameraController"
 import MapCanvas from "@/features/map/components/MapCanvas"
 import FeatureMapControls from "@/features/map/components/controls/MapControls"
+import RouteConnectionLine from "@/features/map/components/layers/RouteConnectionLine"
 import SelectedLocationMarker from "@/features/map/components/layers/SelectedLocationMarker"
 import type { CameraIntent, LngLat } from "@/features/map/domain/types"
 
 type MapViewportProps = {
   originPoint: LngLat | null
+  routeOriginPoint: LngLat | null
+  showOriginMarker: boolean
+  userLocationPoint: LngLat | null
   destinationPoint: LngLat | null
   isLocating: boolean
   locationMessage: string | null
   cameraIntent: CameraIntent | null
-  onMapClick: (position: LngLat) => void
-  onOriginMarkerDragEnd: (position: LngLat) => void
-  onDestinationMarkerDragEnd: (position: LngLat) => void
   onCameraIntentHandled: () => void
   onLocateRequest: () => void
 }
 
 function MapViewport({
   originPoint,
+  routeOriginPoint,
+  showOriginMarker,
+  userLocationPoint,
   destinationPoint,
   isLocating,
   locationMessage,
   cameraIntent,
-  onMapClick,
-  onOriginMarkerDragEnd,
-  onDestinationMarkerDragEnd,
   onCameraIntentHandled,
   onLocateRequest,
 }: MapViewportProps) {
@@ -44,22 +45,31 @@ function MapViewport({
 
   return (
     <>
-      <MapCanvas
-        ref={mapRef}
-        onMapClick={onMapClick}
-        className="absolute inset-0 h-full w-full"
-      >
+      <MapCanvas ref={mapRef} className="absolute inset-0 h-full w-full">
         <MapCameraController
           mapRef={mapRef}
           intent={cameraIntent}
           onHandled={onCameraIntentHandled}
         />
-        {originPoint && (
+        {routeOriginPoint && destinationPoint && (
+          <RouteConnectionLine
+            origin={routeOriginPoint}
+            destination={destinationPoint}
+          />
+        )}
+        {userLocationPoint && (
+          <SelectedLocationMarker
+            position={userLocationPoint}
+            badge=""
+            tone="origin"
+            variant="user-location"
+          />
+        )}
+        {originPoint && showOriginMarker && (
           <SelectedLocationMarker
             position={originPoint}
             badge="A"
             tone="origin"
-            onDragEnd={onOriginMarkerDragEnd}
           />
         )}
         {destinationPoint && (
@@ -67,7 +77,6 @@ function MapViewport({
             position={destinationPoint}
             badge="B"
             tone="destination"
-            onDragEnd={onDestinationMarkerDragEnd}
           />
         )}
       </MapCanvas>
