@@ -42,29 +42,31 @@ const Feature = ({
   return (
     <div
       className={cn(
-        "flex flex-col py-10 relative group/feature border-border",
-        "lg:border-r",
-        index === 0 && "lg:border-l",
+        "flex flex-col py-10 px-8 relative group/feature border-border transition-colors duration-200",
+        // right border for left column items
+        index % 2 === 0 && "md:border-r",
+        // top border for bottom row items
+        index >= 2 && "border-t",
       )}
     >
-      {/* Hover gradient */}
-      <div className="opacity-0 group-hover/feature:opacity-100 transition duration-200 absolute inset-0 h-full w-full bg-gradient-to-t from-[#fef3c7]/60 to-transparent pointer-events-none" />
-
+      {/* Full-box hover background */}
+{/* Full-box hover background */}
+<div className="opacity-0 group-hover/feature:opacity-100 transition duration-200 absolute inset-0 bg-gradient-to-br from-[#fef3c7]/50 to-transparent pointer-events-none" />
       {/* Icon */}
-      <div className="mb-4 relative z-10 px-8 text-[#5a2d14]">
+      <div className="mb-4 relative z-10 text-[#5a2d14]">
         {icon}
       </div>
 
       {/* Title with animated left bar */}
-      <div className="text-base font-semibold mb-3 relative z-10 px-8">
-        <div className="absolute left-0 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-border group-hover/feature:bg-[#5a2d14] transition-all duration-200 origin-center" />
+      <div className="text-base font-semibold mb-3 relative z-10">
+        <div className="absolute -left-8 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-border group-hover/feature:bg-[#5a2d14] transition-all duration-200 origin-center" />
         <span className="group-hover/feature:translate-x-2 transition duration-200 inline-block font-heading text-foreground">
           {title}
         </span>
       </div>
 
       {/* Description */}
-      <p className="font-body text-sm leading-relaxed text-muted-foreground max-w-xs relative z-10 px-8">
+      <p className="font-body text-sm leading-relaxed text-muted-foreground max-w-xs relative z-10">
         {description}
       </p>
     </div>
@@ -92,11 +94,13 @@ export default function FeaturesSectionGrid() {
           </p>
         </div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-b border-border">
-          {features.map((feature, index) => (
-            <Feature key={feature.title} {...feature} index={index} />
-          ))}
+        {/* Grid wrapped in border box */}
+        <div className="border border-border rounded-2xl overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            {features.map((feature, index) => (
+              <Feature key={feature.title} {...feature} index={index} />
+            ))}
+          </div>
         </div>
 
       </div>

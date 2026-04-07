@@ -3,10 +3,13 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist-mono";
 
+
 @custom-variant dark (&:is(.dark *));
 @source "../../../apps/**/*.{ts,tsx}";
 @source "../../../components/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
+
+
 
 :root {
   --background: oklch(1 0 0);
@@ -129,6 +132,8 @@
   --font-landing-body: "BespokeSlab-Regular", sans-serif;
   --font-landing-heading: "Poppins-SemiBold", sans-serif;
   --font-mono: "Geist Mono Variable", monospace;
+   --font-heading: "Inter", sans-serif;
+  --font-body: "DM Sans", sans-serif;
 }
 
 .landing-theme {
