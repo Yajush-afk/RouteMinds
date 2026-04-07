@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from api.app.core.config import settings
-from api.app.core.auth import require_auth
 from api.app.schemas.routes import (
     RouteOptimizationRequest,
     RouteOptimizationResponse,
@@ -33,7 +32,6 @@ def get_route_optimization_service() -> RouteOptimizationService:
 @router.post("/optimize", response_model=RouteOptimizationResponse)
 async def optimize_route(
     request: RouteOptimizationRequest,
-    _claims: dict = Depends(require_auth),
 ) -> RouteOptimizationResponse:
     route_service = get_route_optimization_service()
     result = route_service.optimize_route(

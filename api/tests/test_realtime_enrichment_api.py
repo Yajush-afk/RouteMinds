@@ -582,12 +582,9 @@ class StubRealtimeApiService:
 
 class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
-        self.original_auth0_enabled = settings.AUTH0_ENABLED
-        settings.AUTH0_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
-        settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 
     async def _request(self, method: str, path: str) -> httpx.Response:
@@ -603,7 +600,7 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await refresh_realtime(_claims={"sub": "auth0|demo-user"})
+            response = await refresh_realtime()
 
         self.assertEqual(response.fetched_snapshots, 3)
         self.assertEqual(response.enriched_segments, 2)
@@ -614,19 +611,23 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await realtime_status(_claims={"sub": "auth0|demo-user"})
+            response = await realtime_status()
 
         self.assertTrue(response.configured)
         self.assertEqual(response.cached_segments, 2)
         self.assertTrue(response.cache_is_fresh)
         self.assertEqual(response.auth_mode, "query")
 
-    async def test_realtime_endpoints_require_bearer_token(self) -> None:
-        refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
-        status_response = await self._request("GET", "/api/v1/realtime/status")
+    async def test_realtime_endpoints_are_public(self) -> None:
+        with patch(
+            "api.app.api.v1.realtime.get_realtime_enrichment_service",
+            return_value=StubRealtimeApiService(),
+        ):
+            refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+            status_response = await self._request("GET", "/api/v1/realtime/status")
 
-        self.assertEqual(refresh_response.status_code, 401)
-        self.assertEqual(status_response.status_code, 401)
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertEqual(status_response.status_code, 200)
 
 
 if __name__ == "__main__":

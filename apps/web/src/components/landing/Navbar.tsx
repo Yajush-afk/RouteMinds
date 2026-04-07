@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 
-import { useRouteMindsAuth } from "@/auth/Auth0ProviderWithNavigate"
 import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
 export default function Navbar() {
-  const { isAuthenticated, isConfigured, logout } = useRouteMindsAuth()
   const [isScrolled, setIsScrolled] = useState(false)
 
   useEffect(() => {
@@ -65,42 +63,20 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
-          {isConfigured && isAuthenticated ? (
-            <>
-              <Button
-                asChild
-                variant="outline"
-                className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
-              >
-                <Link to="/map">Open Map</Link>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={logout}
-                className="rounded-xl px-4 text-sm text-foreground"
-              >
-                Log out
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                asChild
-                variant="ghost"
-                className="rounded-xl px-4 text-sm text-foreground hover:bg-transparent hover:text-[var(--landing-primary)]"
-              >
-                <Link to="/auth">Log In</Link>
-              </Button>
-              <Button
-                asChild
-                variant="outline"
-                className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
-              >
-                <Link to="/auth">Get Started</Link>
-              </Button>
-            </>
-          )}
+          <Button
+            asChild
+            variant="ghost"
+            className="rounded-xl px-4 text-sm text-foreground hover:bg-transparent hover:text-[var(--landing-primary)]"
+          >
+            <Link to="/map">Open Map</Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
+          >
+            <Link to="/map">Get Started</Link>
+          </Button>
         </div>
       </div>
     </nav>

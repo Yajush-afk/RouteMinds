@@ -12,8 +12,6 @@ dependencies:
       - anyio==4.10.0
       - asttokens==2.4.1
       - astunparse==1.6.3
-      - auth0-api-python==1.0.0b7
-      - auth0-fastapi-api==1.0.0b6
       - authlib==1.6.9
       - blinker==1.9.0
       - cachecontrol==0.14.3
@@ -108,7 +106,6 @@ dependencies:
       - pydantic-core==2.33.2
       - pydantic-settings==2.13.1
       - pygments==2.18.0
-      - pyjwt==2.10.1
       - pyparsing==3.2.3
       - python-dotenv==1.2.2
       - pytz==2025.2

@@ -1,12 +1,6 @@
 import { getApiBaseUrl } from "@/lib/api/config"
 
-type AccessTokenFactory = () => Promise<string>
-
-type ApiRequestOptions = RequestInit & {
-  auth?: boolean
-}
-
-let accessTokenFactory: AccessTokenFactory | null = null
+type ApiRequestOptions = RequestInit
 
 function resolveUrl(path: string) {
   if (/^https?:\/\//.test(path)) {
@@ -30,24 +24,11 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   return fallback
 }
 
-export function setApiAccessTokenFactory(factory: AccessTokenFactory | null) {
-  accessTokenFactory = factory
-}
-
 export async function apiFetch<T>(
   path: string,
-  { auth = false, headers, ...init }: ApiRequestOptions = {}
+  { headers, ...init }: ApiRequestOptions = {}
 ): Promise<T> {
   const requestHeaders = new Headers(headers)
-
-  if (auth) {
-    if (!accessTokenFactory) {
-      throw new Error("Authenticated API access is not available.")
-    }
-
-    const token = await accessTokenFactory()
-    requestHeaders.set("Authorization", `Bearer ${token}`)
-  }
 
   if (init.body && !requestHeaders.has("Content-Type")) {
     requestHeaders.set("Content-Type", "application/json")

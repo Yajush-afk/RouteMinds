@@ -1,4 +1,3 @@
-import AuthenticatedApiStatus from "@/features/auth/components/AuthenticatedApiStatus"
 import MapViewport from "@/features/map/components/MapViewport"
 import MapSearchPanel from "@/features/map/components/search/MapSearchPanel"
 import { useBackendHealth } from "@/features/map/hooks/useBackendHealth"
@@ -12,7 +11,6 @@ function MapScreen() {
     <section className="relative h-screen w-full">
       <MapViewport {...mapViewportProps} />
       <MapSearchPanel {...searchPanelProps} backendHealth={backendHealth} />
-      <AuthenticatedApiStatus />
     </section>
   )
 }

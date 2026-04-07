@@ -6,7 +6,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.app.core.config import settings
 from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
-from api.app.api.v1.auth import router as auth_router
 from api.app.api.v1.health import router as health_router
 from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.predictions import router as predictions_router
@@ -69,7 +68,6 @@ API_V1_PREFIX = "/api/v1"
 
 
 def include_api_routes(prefix: str = "") -> None:
-    app.include_router(auth_router, prefix=prefix)
     app.include_router(health_router, prefix=prefix)
     app.include_router(stops_router, prefix=prefix)
     app.include_router(routes_router, prefix=prefix)
