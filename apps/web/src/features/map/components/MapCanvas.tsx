@@ -1,6 +1,5 @@
 import { forwardRef, memo } from "react"
 import Map from "react-map-gl/maplibre"
-import type { MapLayerMouseEvent } from "maplibre-gl"
 import type { PropsWithChildren } from "react"
 import type { MapRef } from "react-map-gl/maplibre"
 
@@ -14,11 +13,9 @@ import {
   INITIAL_MAP_CENTER,
   MIN_MAP_ZOOM,
 } from "@/features/map/domain/mapDefaults"
-import type { LngLat } from "@/features/map/domain/types"
 import { cn } from "@workspace/ui/lib/utils"
 
 type MapCanvasProps = PropsWithChildren<{
-  onMapClick?: (position: LngLat) => void
   className?: string
 }>
 
@@ -35,20 +32,9 @@ const MAX_BOUNDS = [
 
 const MapCanvas = memo(
   forwardRef<MapRef, MapCanvasProps>(function MapCanvas(
-    { onMapClick, className, children },
+    { className, children },
     ref
   ) {
-    function handleMapClick(event: MapLayerMouseEvent) {
-      if (!onMapClick) {
-        return
-      }
-
-      onMapClick({
-        lng: event.lngLat.lng,
-        lat: event.lngLat.lat,
-      })
-    }
-
     return (
       <div className={cn("absolute inset-0 h-full w-full", className)}>
         <Map
@@ -61,7 +47,6 @@ const MapCanvas = memo(
           dragRotate={false}
           doubleClickZoom={true}
           touchZoomRotate={true}
-          onClick={handleMapClick}
         >
           {children}
           <div className="pointer-events-none absolute right-3 bottom-3 z-10 rounded-md bg-background/85 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur supports-backdrop-filter:bg-background/70">

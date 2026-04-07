@@ -247,7 +247,9 @@ function MapSearchBar({
                     >
                       <MapPin className="size-3.5" />
                     </span>
-                    <span className="min-w-0 leading-snug">{result.label}</span>
+                    <span className="min-w-0 truncate leading-snug">
+                      {result.label}
+                    </span>
                   </span>
                 </button>
               </li>
@@ -297,6 +299,7 @@ function MapSearchBar({
           <InputGroupInput
             placeholder="From"
             value={originText}
+            title={originText || "From"}
             onFocus={(event) => {
               setActiveField("from")
               setHighlightedIndex(originResults.length > 0 ? 0 : -1)
@@ -312,7 +315,7 @@ function MapSearchBar({
             onChange={(event) => onOriginChange(event.target.value)}
             onBlur={onOriginBlur}
             onKeyDown={handleOriginKeyDown}
-            className="h-12 px-3 text-[15px] font-medium text-slate-800 placeholder:text-slate-500"
+            className="h-12 overflow-hidden px-3 text-ellipsis whitespace-nowrap text-[15px] font-medium text-slate-800 placeholder:text-slate-500"
           />
           <InputGroupAddon
             align="inline-start"
@@ -351,6 +354,7 @@ function MapSearchBar({
           <InputGroupInput
             placeholder="To"
             value={destinationText}
+            title={destinationText || "To"}
             autoComplete="off"
             onFocus={(event) => {
               setActiveField("to")
@@ -366,7 +370,7 @@ function MapSearchBar({
               setActiveField("to")
             }}
             onKeyDown={handleDestinationKeyDown}
-            className="h-12 px-3 text-[15px] font-medium text-slate-800 placeholder:text-slate-500"
+            className="h-12 overflow-hidden px-3 text-ellipsis whitespace-nowrap text-[15px] font-medium text-slate-800 placeholder:text-slate-500"
           />
           <InputGroupAddon
             align="inline-start"
