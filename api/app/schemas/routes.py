@@ -22,10 +22,12 @@ class RouteSegmentPrediction(BaseModel):
     route_id: str
     from_stop_id: str
     to_stop_id: str
+    scheduled_departure_unix: int | None = None
     stop_sequence: int
     normalized_stop_position: float
     distance_to_prev_stop_km: float
     scheduled_segment_minutes: float
+    wait_minutes_before_boarding: float = Field(default=0.0, ge=0.0)
     predicted_actual_segment_minutes: float
     predicted_segment_delay_minutes: float
 

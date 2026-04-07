@@ -11,6 +11,7 @@ from api.app.api.v1.health import router as health_router
 from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.predictions import router as predictions_router
 from api.app.api.v1.realtime import router as realtime_router
+from api.app.api.v1.stops import router as stops_router
 from api.app.services.realtime_enrichment_service import get_realtime_enrichment_service
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ async def realtime_refresh_loop() -> None:
         try:
             service = get_realtime_enrichment_service()
             if service.get_status()["configured"]:
-                service.refresh_vehicle_positions()
+                await asyncio.to_thread(service.refresh_vehicle_positions)
         except Exception as exc:
             logger.warning("Background GTFS-RT refresh failed: %s", exc)
         await asyncio.sleep(interval_seconds)
@@ -70,6 +71,7 @@ API_V1_PREFIX = "/api/v1"
 def include_api_routes(prefix: str = "") -> None:
     app.include_router(auth_router, prefix=prefix)
     app.include_router(health_router, prefix=prefix)
+    app.include_router(stops_router, prefix=prefix)
     app.include_router(routes_router, prefix=prefix)
     app.include_router(predictions_router, prefix=prefix)
     app.include_router(realtime_router, prefix=prefix)
