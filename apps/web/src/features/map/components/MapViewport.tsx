@@ -10,6 +10,7 @@ import type { CameraIntent, LngLat } from "@/features/map/domain/types"
 
 type MapViewportProps = {
   originPoint: LngLat | null
+  routeOriginPoint: LngLat | null
   showOriginMarker: boolean
   userLocationPoint: LngLat | null
   destinationPoint: LngLat | null
@@ -22,6 +23,7 @@ type MapViewportProps = {
 
 function MapViewport({
   originPoint,
+  routeOriginPoint,
   showOriginMarker,
   userLocationPoint,
   destinationPoint,
@@ -49,8 +51,11 @@ function MapViewport({
           intent={cameraIntent}
           onHandled={onCameraIntentHandled}
         />
-        {originPoint && destinationPoint && (
-          <RouteConnectionLine origin={originPoint} destination={destinationPoint} />
+        {routeOriginPoint && destinationPoint && (
+          <RouteConnectionLine
+            origin={routeOriginPoint}
+            destination={destinationPoint}
+          />
         )}
         {userLocationPoint && (
           <SelectedLocationMarker
