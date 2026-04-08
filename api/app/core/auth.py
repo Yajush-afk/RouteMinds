@@ -122,11 +122,29 @@ def normalize_token_claims(claims: TokenClaims) -> TokenClaims:
     if subject is not None:
         normalized_claims["sub"] = str(subject).strip()
 
+    role = normalized_claims.get("role")
+    if role is not None:
+        normalized_claims["role"] = str(role).strip()
+
+    session_id = normalized_claims.get("session_id")
+    if session_id is not None:
+        normalized_claims["session_id"] = str(session_id).strip()
+
     scope = normalized_claims.get("scope")
     if isinstance(scope, str):
         normalized_claims["scope"] = " ".join(
             value.strip() for value in scope.split() if value.strip()
         )
+
+    app_metadata = normalized_claims.get("app_metadata")
+    if isinstance(app_metadata, dict):
+        normalized_app_metadata = dict(app_metadata)
+        app_permissions = normalized_app_metadata.get("permissions")
+        if isinstance(app_permissions, list):
+            normalized_app_metadata["permissions"] = [
+                str(value).strip() for value in app_permissions if str(value).strip()
+            ]
+        normalized_claims["app_metadata"] = normalized_app_metadata
 
     permissions = normalized_claims.get("permissions")
     if isinstance(permissions, list):
@@ -135,6 +153,33 @@ def normalize_token_claims(claims: TokenClaims) -> TokenClaims:
         ]
 
     return normalized_claims
+
+
+def validate_supabase_user_claims(claims: TokenClaims) -> TokenClaims:
+    subject = str(claims.get("sub") or "").strip()
+    if not subject:
+        raise AuthenticationException(
+            "Supabase access token is missing the user subject claim."
+        )
+
+    role = str(claims.get("role") or "").strip()
+    if role != "authenticated":
+        raise AuthenticationException(
+            "Supabase access token is not a user session token."
+        )
+
+    session_id = str(claims.get("session_id") or "").strip()
+    if not session_id:
+        raise AuthenticationException(
+            "Supabase access token is missing the session_id claim."
+        )
+
+    if claims.get("is_anonymous") is True:
+        raise AuthenticationException(
+            "Anonymous Supabase sessions are not allowed for this API."
+        )
+
+    return claims
 
 
 def extract_bearer_token(request: Request) -> str:
@@ -249,13 +294,6 @@ def get_auth_verifier() -> SupabaseJWTVerifier:
         algorithms=algorithms,
     )
 
-
-def get_auth0_verifier() -> SupabaseJWTVerifier:
-    return get_auth_verifier()
-
-
-get_auth0_verifier.cache_clear = get_auth_verifier.cache_clear  # type: ignore[attr-defined]
-
 async def require_auth(
     request: Request,
 ) -> TokenClaims:
@@ -274,7 +312,8 @@ async def require_auth(
 
     try:
         verifier = get_auth_verifier()
-        return normalize_token_claims(verifier.verify_token(token))
+        claims = normalize_token_claims(verifier.verify_token(token))
+        return validate_supabase_user_claims(claims)
     except AuthenticationException as exc:
         log_auth_warning(
             "invalid_or_expired_access_token",
@@ -293,6 +332,14 @@ async def require_auth(
 
 def extract_token_permissions(claims: TokenClaims) -> set[str]:
     permissions: set[str] = set()
+
+    app_metadata = claims.get("app_metadata")
+    if isinstance(app_metadata, dict):
+        raw_app_permissions = app_metadata.get("permissions")
+        if isinstance(raw_app_permissions, list):
+            permissions.update(
+                str(value).strip() for value in raw_app_permissions if str(value).strip()
+            )
 
     raw_permissions = claims.get("permissions")
     if isinstance(raw_permissions, list):

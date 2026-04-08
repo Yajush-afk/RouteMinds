@@ -6,12 +6,15 @@ from pydantic_settings import BaseSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-
-def normalize_auth0_domain(value: str) -> str:
-    normalized = value.strip()
-    if normalized.startswith("https://"):
-        normalized = normalized[len("https://") :]
-    return normalized.rstrip("/")
+SUPPORTED_SUPABASE_JWT_ALGORITHMS = {
+    "RS256",
+    "RS384",
+    "RS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "EdDSA",
+}
 
 
 def normalize_comma_separated_values(value: str) -> list[str]:
@@ -40,17 +43,6 @@ def normalize_supabase_url(value: str) -> str:
             "SUPABASE_URL must be a bare project origin without paths, queries, or fragments."
         )
     return f"https://{parsed.netloc}"
-
-
-def normalize_auth0_issuer(value: str) -> str:
-    parsed = urlparse(value.strip())
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("AUTH0_ISSUER must be a valid https URL.")
-    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
-        raise ValueError(
-            "AUTH0_ISSUER must point to the tenant root and cannot include paths, queries, or fragments."
-        )
-    return f"https://{parsed.netloc}/"
 
 
 def normalize_supabase_issuer(value: str) -> str:
@@ -85,12 +77,6 @@ class Settings(BaseSettings):
     SUPABASE_JWT_AUDIENCE: str = ""
     SUPABASE_JWT_ALGORITHMS: str = "RS256"
     SUPABASE_REALTIME_REQUIRED_PERMISSION: str = "realtime:manage"
-    AUTH0_ENABLED: bool = False
-    AUTH0_DOMAIN: str = ""
-    AUTH0_AUDIENCE: str = ""
-    AUTH0_ISSUER: str = ""
-    AUTH0_ALGORITHMS: str = "RS256"
-    AUTH0_REALTIME_REQUIRED_PERMISSION: str = "realtime:manage"
 
     MODEL_PATH: str = "artifacts/models/xgboost_segment_travel_time_model.joblib"
     SCHEMA_PATH: str = "artifacts/models/xgboost_segment_travel_time_schema.json"
@@ -130,19 +116,6 @@ class Settings(BaseSettings):
                 return False
         return value
 
-    @field_validator("AUTH0_ENABLED", mode="before")
-    @classmethod
-    def parse_auth0_enabled(cls, value):
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"1", "true", "yes", "on", "enabled"}:
-                return True
-            if normalized in {"0", "false", "no", "off", "disabled"}:
-                return False
-        return value
-
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def parse_cors_allow_origins(cls, value):
@@ -163,18 +136,9 @@ class Settings(BaseSettings):
             return normalize_supabase_url(normalized)
         return value
 
-    @field_validator("AUTH0_DOMAIN", mode="before")
-    @classmethod
-    def parse_auth0_domain(cls, value):
-        if isinstance(value, str):
-            return normalize_auth0_domain(value)
-        return value
-
     @field_validator(
         "SUPABASE_JWT_AUDIENCE",
         "SUPABASE_REALTIME_REQUIRED_PERMISSION",
-        "AUTH0_AUDIENCE",
-        "AUTH0_REALTIME_REQUIRED_PERMISSION",
         mode="before",
     )
     @classmethod
@@ -193,16 +157,6 @@ class Settings(BaseSettings):
             return normalize_supabase_issuer(normalized)
         return value
 
-    @field_validator("AUTH0_ISSUER", mode="before")
-    @classmethod
-    def parse_auth0_issuer(cls, value):
-        if isinstance(value, str):
-            normalized = value.strip()
-            if not normalized:
-                return ""
-            return normalize_auth0_issuer(normalized)
-        return value
-
     @field_validator("SUPABASE_JWT_ALGORITHMS", mode="before")
     @classmethod
     def parse_supabase_jwt_algorithms(cls, value):
@@ -216,59 +170,47 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SUPABASE_JWT_ALGORITHMS must contain at least one algorithm."
                 )
-            return ",".join(algorithms)
-        return value
-
-    @field_validator("AUTH0_ALGORITHMS", mode="before")
-    @classmethod
-    def parse_auth0_algorithms(cls, value):
-        if isinstance(value, str):
-            algorithms = [
-                algorithm.strip().upper()
-                for algorithm in value.split(",")
-                if algorithm.strip()
+            unsupported_algorithms = [
+                algorithm
+                for algorithm in algorithms
+                if algorithm not in SUPPORTED_SUPABASE_JWT_ALGORITHMS
             ]
-            if not algorithms:
-                raise ValueError("AUTH0_ALGORITHMS must contain at least one algorithm.")
+            if unsupported_algorithms:
+                raise ValueError(
+                    "SUPABASE_JWT_ALGORITHMS must use JWKS-compatible asymmetric algorithms only: "
+                    + ", ".join(sorted(SUPPORTED_SUPABASE_JWT_ALGORITHMS))
+                    + "."
+                )
             return ",".join(algorithms)
         return value
 
     @property
     def auth_enabled(self) -> bool:
-        return self.SUPABASE_AUTH_ENABLED or self.AUTH0_ENABLED
+        return self.SUPABASE_AUTH_ENABLED
 
     @property
     def auth_project_url(self) -> str:
-        if self.SUPABASE_URL:
-            return self.SUPABASE_URL
-        if self.AUTH0_DOMAIN:
-            return f"https://{normalize_auth0_domain(self.AUTH0_DOMAIN)}"
-        return ""
+        return self.SUPABASE_URL
 
     @property
     def auth_jwt_issuer(self) -> str:
         if self.SUPABASE_JWT_ISSUER:
             return self.SUPABASE_JWT_ISSUER
-        if self.AUTH0_ISSUER:
-            return self.AUTH0_ISSUER.rstrip("/")
         if self.auth_project_url:
             return f"{self.auth_project_url}/auth/v1"
         return ""
 
     @property
     def auth_jwt_audience(self) -> str:
-        return self.SUPABASE_JWT_AUDIENCE or self.AUTH0_AUDIENCE
+        return self.SUPABASE_JWT_AUDIENCE
 
     @property
     def auth_jwt_algorithms(self) -> str:
-        return self.SUPABASE_JWT_ALGORITHMS or self.AUTH0_ALGORITHMS
+        return self.SUPABASE_JWT_ALGORITHMS
 
     @property
     def realtime_required_permission(self) -> str:
-        return (
-            self.SUPABASE_REALTIME_REQUIRED_PERMISSION
-            or self.AUTH0_REALTIME_REQUIRED_PERMISSION
-        )
+        return self.SUPABASE_REALTIME_REQUIRED_PERMISSION
 
     @field_validator("GTFS_RT_AUTH_MODE", mode="before")
     @classmethod

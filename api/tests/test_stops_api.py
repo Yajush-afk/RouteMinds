@@ -26,13 +26,11 @@ class StubStopsGraphService:
 class StopsApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
-        self.original_auth0_enabled = settings.AUTH0_ENABLED
         settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
-        settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 
     async def _request(self, query_string: str) -> httpx.Response:
@@ -49,7 +47,11 @@ class StopsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 401)
 
     async def test_nearby_stops_endpoint_returns_nearest_stops(self) -> None:
-        app.dependency_overrides[require_auth] = lambda: {"sub": "auth0|demo-user"}
+        app.dependency_overrides[require_auth] = lambda: {
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+        }
 
         with patch(
             "api.app.api.v1.stops.get_gtfs_graph_service",

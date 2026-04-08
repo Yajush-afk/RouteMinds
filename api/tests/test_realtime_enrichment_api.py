@@ -583,13 +583,11 @@ class StubRealtimeApiService:
 class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
-        self.original_auth0_enabled = settings.AUTH0_ENABLED
         settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
-        settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 
     async def _request(self, method: str, path: str) -> httpx.Response:
@@ -605,7 +603,14 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await refresh_realtime(_claims={"sub": "auth0|demo-user"})
+            response = await refresh_realtime(
+                _claims={
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "app_metadata": {"permissions": ["realtime:manage"]},
+                }
+            )
 
         self.assertEqual(response.fetched_snapshots, 3)
         self.assertEqual(response.enriched_segments, 2)
@@ -616,7 +621,14 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await realtime_status(_claims={"sub": "auth0|demo-user"})
+            response = await realtime_status(
+                _claims={
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "app_metadata": {"permissions": ["realtime:manage"]},
+                }
+            )
 
         self.assertTrue(response.configured)
         self.assertEqual(response.cached_segments, 2)

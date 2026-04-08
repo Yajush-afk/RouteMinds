@@ -47,6 +47,13 @@ class SettingsValidationTests(unittest.TestCase):
 
         self.assertEqual(settings.SUPABASE_JWT_ALGORITHMS, "RS256,ES256")
 
+    def test_supabase_algorithms_reject_shared_secret_algorithms(self) -> None:
+        with self.assertRaises(ValidationError):
+            Settings(
+                _env_file=None,
+                SUPABASE_JWT_ALGORITHMS="HS256",
+            )
+
     def test_runtime_validation_requires_supabase_settings_when_enabled(self) -> None:
         settings = Settings(
             _env_file=None,

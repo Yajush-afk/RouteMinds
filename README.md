@@ -157,7 +157,16 @@ The current backend authentication contract is:
 
 When `SUPABASE_AUTH_ENABLED=false`, backend auth dependencies are bypassed for local development.
 
-`GET /auth/me` is the backend diagnostic endpoint for verifying that a caller is authenticated and inspecting the normalized claims, scopes, and permissions seen by the API.
+`GET /auth/me` is the backend diagnostic endpoint for verifying that a caller is authenticated and inspecting the normalized claims and permissions seen by the API.
+
+Authenticated API routes require a real Supabase user session token, not just any signed JWT. The backend expects at least:
+
+- a non-empty `sub`
+- `role=authenticated`
+- a non-empty `session_id`
+- `is_anonymous=false` when the claim is present
+
+Realtime authorization reads permissions primarily from `app_metadata.permissions` in the Supabase access token. Legacy root-level `permissions` and `scope` claims are still accepted for compatibility.
 
 The backend auth dependency layer is organized around:
 
@@ -314,6 +323,7 @@ When `SUPABASE_AUTH_ENABLED=true`, the backend validates its Supabase JWT config
 - `SUPABASE_REALTIME_REQUIRED_PERMISSION` is missing
 - `SUPABASE_JWT_ISSUER` is not a valid `https://.../auth/v1` issuer URL
 - `SUPABASE_JWT_ISSUER` points to a different host than `SUPABASE_URL`
+- `SUPABASE_JWT_ALGORITHMS` includes unsupported shared-secret algorithms such as `HS256`
 
 `CORS_ALLOW_ORIGINS` must be a comma-separated list of bare origins such as
 `http://localhost:5173,https://app.example.com`. Paths and query strings are rejected.
@@ -368,7 +378,7 @@ export ROUTEMINDS_SUPABASE_TEST_BASE_URL=http://127.0.0.1:8000
 export ROUTEMINDS_SUPABASE_TEST_ACCESS_TOKEN=<valid access token>
 export ROUTEMINDS_SUPABASE_TEST_REALTIME_TOKEN=<token with realtime:manage>
 export ROUTEMINDS_SUPABASE_TEST_INVALID_TOKEN=<known invalid token>
-conda run -n route_minds python -m unittest api.tests.test_auth0_live_integration
+conda run -n route_minds python -m unittest api.tests.test_supabase_live_integration
 ```
 
 Only `ROUTEMINDS_SUPABASE_TEST_BASE_URL` and `ROUTEMINDS_SUPABASE_TEST_ACCESS_TOKEN` are required to enable the live suite. The realtime and invalid-token checks are skipped unless those extra variables are set.

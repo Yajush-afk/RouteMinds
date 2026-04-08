@@ -274,13 +274,11 @@ class StubRouteOptimizationApiService:
 class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
-        self.original_auth0_enabled = settings.AUTH0_ENABLED
         settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
-        settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 
     async def _post_route(self, payload: dict) -> httpx.Response:
@@ -302,7 +300,11 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                     destination_stop_id="B",
                     query_timestamp_unix=1742803800,
                 ),
-                _claims={"sub": "auth0|demo-user"},
+                _claims={
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                },
             )
 
         self.assertEqual(len(response.stops), 2)
@@ -321,7 +323,11 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                         destination_stop_id="B",
                         query_timestamp_unix=1742803800,
                     ),
-                    _claims={"sub": "auth0|demo-user"},
+                    _claims={
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    },
                 )
 
     async def test_no_route_returns_404(self) -> None:
@@ -336,7 +342,11 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                         destination_stop_id="UNREACHABLE",
                         query_timestamp_unix=1742803800,
                     ),
-                    _claims={"sub": "auth0|demo-user"},
+                    _claims={
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    },
                 )
 
     async def test_missing_required_field_returns_422(self) -> None:

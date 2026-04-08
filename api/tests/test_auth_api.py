@@ -17,6 +17,7 @@ from api.app.core.auth import (
     require_auth,
     require_permissions,
     require_realtime_access,
+    validate_supabase_user_claims,
 )
 from api.app.core.config import settings
 from api.app.core.exceptions import (
@@ -120,12 +121,6 @@ class AuthDependencyTests(unittest.TestCase):
         self.original_supabase_realtime_permission = (
             settings.SUPABASE_REALTIME_REQUIRED_PERMISSION
         )
-        self.original_auth0_enabled = settings.AUTH0_ENABLED
-        self.original_auth0_domain = settings.AUTH0_DOMAIN
-        self.original_auth0_audience = settings.AUTH0_AUDIENCE
-        self.original_auth0_issuer = settings.AUTH0_ISSUER
-        self.original_auth0_algorithms = settings.AUTH0_ALGORITHMS
-        self.original_auth0_realtime_permission = settings.AUTH0_REALTIME_REQUIRED_PERMISSION
         get_auth_verifier.cache_clear()
 
     def tearDown(self) -> None:
@@ -137,17 +132,10 @@ class AuthDependencyTests(unittest.TestCase):
         settings.SUPABASE_REALTIME_REQUIRED_PERMISSION = (
             self.original_supabase_realtime_permission
         )
-        settings.AUTH0_ENABLED = self.original_auth0_enabled
-        settings.AUTH0_DOMAIN = self.original_auth0_domain
-        settings.AUTH0_AUDIENCE = self.original_auth0_audience
-        settings.AUTH0_ISSUER = self.original_auth0_issuer
-        settings.AUTH0_ALGORITHMS = self.original_auth0_algorithms
-        settings.AUTH0_REALTIME_REQUIRED_PERMISSION = self.original_auth0_realtime_permission
         get_auth_verifier.cache_clear()
 
     def test_require_auth_returns_disabled_claims_when_auth_is_off(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = False
-        settings.AUTH0_ENABLED = False
         request = Request({"type": "http", "headers": []})
 
         claims = asyncio.run(require_auth(request))
@@ -175,13 +163,17 @@ class AuthDependencyTests(unittest.TestCase):
             }
         )
         verifier = MagicMock()
-        verifier.verify_token.return_value = {"sub": "auth0|user-123"}
+        verifier.verify_token.return_value = {
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+        }
 
         with patch("api.app.core.auth.get_auth_verifier", return_value=verifier):
             claims = asyncio.run(require_auth(request))
 
         verifier.verify_token.assert_called_once_with("test-token")
-        self.assertEqual(claims["sub"], "auth0|user-123")
+        self.assertEqual(claims["sub"], "6c0a1808-4a95-4c21-85a8-44fa17c22d11")
 
     def test_extract_bearer_token_rejects_malformed_authorization_header(self) -> None:
         request = Request(
@@ -217,27 +209,64 @@ class AuthDependencyTests(unittest.TestCase):
     def test_normalize_token_claims_strips_subject_scope_and_permissions(self) -> None:
         claims = normalize_token_claims(
             {
-                "sub": " auth0|user-123 ",
+                "sub": " 6c0a1808-4a95-4c21-85a8-44fa17c22d11 ",
+                "role": " authenticated ",
+                "session_id": " 6734ed6d-5101-4c88-958f-8eb6e2e27daf ",
                 "scope": " route:read   realtime:manage ",
                 "permissions": [" realtime:manage ", "", " route:read "],
+                "app_metadata": {
+                    "permissions": [" admin:read ", "", " realtime:manage "],
+                },
             }
         )
 
-        self.assertEqual(claims["sub"], "auth0|user-123")
+        self.assertEqual(claims["sub"], "6c0a1808-4a95-4c21-85a8-44fa17c22d11")
+        self.assertEqual(claims["role"], "authenticated")
+        self.assertEqual(claims["session_id"], "6734ed6d-5101-4c88-958f-8eb6e2e27daf")
         self.assertEqual(claims["scope"], "route:read realtime:manage")
         self.assertEqual(claims["permissions"], ["realtime:manage", "route:read"])
+        self.assertEqual(
+            claims["app_metadata"]["permissions"],
+            ["admin:read", "realtime:manage"],
+        )
+
+    def test_validate_supabase_user_claims_rejects_non_user_tokens(self) -> None:
+        with self.assertRaises(AuthenticationException) as context:
+            validate_supabase_user_claims(
+                {
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "anon",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                }
+            )
+
+        self.assertEqual(context.exception.status_code, 401)
+
+    def test_validate_supabase_user_claims_rejects_anonymous_sessions(self) -> None:
+        with self.assertRaises(AuthenticationException) as context:
+            validate_supabase_user_claims(
+                {
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "is_anonymous": True,
+                }
+            )
+
+        self.assertEqual(context.exception.status_code, 401)
 
     def test_extract_token_permissions_combines_scope_and_permissions_claims(self) -> None:
         permissions = extract_token_permissions(
             {
                 "scope": "route:read realtime:manage",
                 "permissions": ["route:write", "realtime:manage"],
+                "app_metadata": {"permissions": ["stops:read"]},
             }
         )
 
         self.assertEqual(
             permissions,
-            {"route:read", "route:write", "realtime:manage"},
+            {"route:read", "route:write", "realtime:manage", "stops:read"},
         )
 
     def test_missing_supabase_url_or_audience_raises_config_error(self) -> None:
@@ -267,7 +296,7 @@ class AuthDependencyTests(unittest.TestCase):
                     asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 503)
 
-    def test_auth0_verifier_rejects_invalid_audience(self) -> None:
+    def test_supabase_verifier_rejects_invalid_audience(self) -> None:
         settings.SUPABASE_URL = "https://project.supabase.co"
         settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         verifier = get_auth_verifier()
@@ -285,7 +314,7 @@ class AuthDependencyTests(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 401)
 
-    def test_auth0_verifier_rejects_invalid_issuer(self) -> None:
+    def test_supabase_verifier_rejects_invalid_issuer(self) -> None:
         settings.SUPABASE_URL = "https://project.supabase.co"
         settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         verifier = get_auth_verifier()
@@ -303,7 +332,7 @@ class AuthDependencyTests(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 401)
 
-    def test_auth0_verifier_rejects_expired_tokens(self) -> None:
+    def test_supabase_verifier_rejects_expired_tokens(self) -> None:
         settings.SUPABASE_URL = "https://project.supabase.co"
         settings.SUPABASE_JWT_AUDIENCE = "authenticated"
         verifier = get_auth_verifier()
@@ -376,31 +405,64 @@ class AuthDependencyTests(unittest.TestCase):
         settings.SUPABASE_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
 
         with self.assertRaises(AuthorizationException) as context:
-            asyncio.run(require_realtime_access({"sub": "auth0|user", "scope": "route:read"}))
+            asyncio.run(
+                require_realtime_access(
+                    {
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                        "app_metadata": {"permissions": ["route:read"]},
+                    }
+                )
+            )
         self.assertEqual(context.exception.status_code, 403)
 
-    def test_require_realtime_access_accepts_scope_or_permissions_claim(self) -> None:
+    def test_require_realtime_access_accepts_supabase_app_metadata_permissions(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = True
         settings.SUPABASE_REALTIME_REQUIRED_PERMISSION = "realtime:manage"
 
-        scope_claims = asyncio.run(
-            require_realtime_access({"sub": "auth0|user", "scope": "route:read realtime:manage"})
-        )
-        permission_claims = asyncio.run(
+        app_metadata_claims = asyncio.run(
             require_realtime_access(
-                {"sub": "auth0|user", "permissions": ["realtime:manage"]}
+                {
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "app_metadata": {"permissions": ["realtime:manage"]},
+                }
+            )
+        )
+        legacy_permission_claims = asyncio.run(
+            require_realtime_access(
+                {
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "permissions": ["realtime:manage"],
+                }
             )
         )
 
-        self.assertEqual(scope_claims["sub"], "auth0|user")
-        self.assertEqual(permission_claims["sub"], "auth0|user")
+        self.assertEqual(app_metadata_claims["sub"], "6c0a1808-4a95-4c21-85a8-44fa17c22d11")
+        self.assertEqual(
+            legacy_permission_claims["sub"],
+            "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+        )
 
     def test_require_permissions_rejects_missing_permissions(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = True
         route_access_guard = require_permissions(("route:read", "route:write"))
 
         with self.assertRaises(AuthorizationException) as context:
-            asyncio.run(route_access_guard({"sub": "auth0|user", "scope": "route:read"}))
+            asyncio.run(
+                route_access_guard(
+                    {
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                        "scope": "route:read",
+                    }
+                )
+            )
 
         self.assertEqual(context.exception.status_code, 403)
         self.assertIn("route:write", context.exception.message)
@@ -419,7 +481,12 @@ class AuthDependencyTests(unittest.TestCase):
         with patch("api.app.core.auth.logger") as logger_mock:
             with self.assertRaises(AuthorizationException):
                 authorize_claims_for_permissions(
-                    {"sub": "auth0|user", "scope": "route:read"},
+                    {
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                        "scope": "route:read",
+                    },
                     ("realtime:manage",),
                     message="You do not have permission to access realtime operational endpoints.",
                     request=request,
@@ -433,21 +500,44 @@ class AuthDependencyTests(unittest.TestCase):
         route_access_guard = require_permissions(("route:read",))
 
         scope_claims = asyncio.run(
-            route_access_guard({"sub": "auth0|user", "scope": "route:read"})
+            route_access_guard(
+                {
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "scope": "route:read",
+                }
+            )
         )
         permissions_claims = asyncio.run(
-            route_access_guard({"sub": "auth0|user", "permissions": ["route:read"]})
+            route_access_guard(
+                {
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "permissions": ["route:read"],
+                }
+            )
         )
 
-        self.assertEqual(scope_claims["sub"], "auth0|user")
-        self.assertEqual(permissions_claims["sub"], "auth0|user")
+        self.assertEqual(scope_claims["sub"], "6c0a1808-4a95-4c21-85a8-44fa17c22d11")
+        self.assertEqual(permissions_claims["sub"], "6c0a1808-4a95-4c21-85a8-44fa17c22d11")
 
     def test_require_permissions_rejects_empty_permission_configuration(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = True
         empty_guard = require_permissions(("", "   "))
 
         with self.assertRaises(AuthConfigurationException) as context:
-            asyncio.run(empty_guard({"sub": "auth0|user", "scope": "route:read"}))
+            asyncio.run(
+                empty_guard(
+                    {
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                        "scope": "route:read",
+                    }
+                )
+            )
 
         self.assertEqual(context.exception.status_code, 503)
 
@@ -455,23 +545,26 @@ class AuthDependencyTests(unittest.TestCase):
         settings.SUPABASE_AUTH_ENABLED = True
 
         claims = authorize_claims_for_permissions(
-            {"sub": "auth0|user", "permissions": ["route:read"]},
+            {
+                "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                "role": "authenticated",
+                "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                "permissions": ["route:read"],
+            },
             ("route:read",),
         )
 
-        self.assertEqual(claims["sub"], "auth0|user")
+        self.assertEqual(claims["sub"], "6c0a1808-4a95-4c21-85a8-44fa17c22d11")
 
 
 class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
-        self.original_auth0_enabled = settings.AUTH0_ENABLED
         settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
-        settings.AUTH0_ENABLED = self.original_auth0_enabled
         app.dependency_overrides.clear()
 
     async def _request(self, method: str, path: str, json_body: dict | None = None) -> httpx.Response:
@@ -548,25 +641,33 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_authenticated_session_endpoint_returns_normalized_claims(self) -> None:
         app.dependency_overrides[require_auth] = lambda: {
-            "sub": "auth0|contract-user",
-            "scope": "route:read realtime:manage",
-            "permissions": ["realtime:manage"],
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
             "azp": "frontend-client",
+            "app_metadata": {"permissions": ["realtime:manage"]},
         }
 
         response = await self._request("GET", "/api/v1/auth/me")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["subject"], "auth0|contract-user")
-        self.assertEqual(response.json()["scope"], ["route:read", "realtime:manage"])
+        self.assertEqual(
+            response.json()["subject"],
+            "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+        )
+        self.assertEqual(response.json()["scope"], [])
         self.assertEqual(
             response.json()["permissions"],
-            ["realtime:manage", "route:read"],
+            ["realtime:manage"],
         )
         self.assertEqual(response.json()["claims"]["azp"], "frontend-client")
 
     async def test_route_optimization_endpoint_accepts_authenticated_requests(self) -> None:
-        app.dependency_overrides[require_auth] = lambda: {"sub": "auth0|contract-user"}
+        app.dependency_overrides[require_auth] = lambda: {
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+        }
 
         with patch(
             "api.app.api.v1.routes.get_route_optimization_service",
@@ -601,8 +702,10 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_realtime_endpoints_accept_requests_with_required_permission(self) -> None:
         app.dependency_overrides[require_realtime_access] = lambda: {
-            "sub": "auth0|contract-user",
-            "permissions": ["realtime:manage"],
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+            "app_metadata": {"permissions": ["realtime:manage"]},
         }
 
         with patch(
