@@ -65,7 +65,7 @@ export default function Navbar() {
               <Button
                 asChild
                 variant="outline"
-                className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
+                className="!font-body rounded-[12px] landing-hover-lift bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300"
               >
                 <Link to="/map">Open Map</Link>
               </Button>
@@ -73,7 +73,7 @@ export default function Navbar() {
                 type="button"
                 variant="ghost"
                 onClick={logout}
-                className="rounded-xl px-4 text-sm text-foreground"
+                className="font-body flex landing-hover-lift items-center gap-2 rounded-[12px] border-foreground/20 bg-background shadow-2xl px-4 text-sm text-foreground transition-colors hover:bg-foreground/5 sm:px-5 border border-zinc-300"
               >
                 Log out
               </Button>
@@ -83,14 +83,13 @@ export default function Navbar() {
               <Button
                 asChild
                 variant="ghost"
-                className="rounded-xl px-4 text-sm text-foreground hover:bg-transparent hover:text-[var(--landing-primary)]"
-              >
+                className="font-body flex landing-hover-lift items-center gap-2 rounded-[12px] border-foreground/20 bg-background shadow-2xl px-4 text-sm text-foreground transition-colors hover:bg-foreground/5 sm:px-5 border border-zinc-300" >
                 <Link to="/auth">Log In</Link>
               </Button>
               <Button
                 asChild
-                variant="outline"
-                className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
+                
+                className="!font-body rounded-[12px] landing-hover-lift bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300"
               >
                 <Link to="/auth">Get Started</Link>
               </Button>
