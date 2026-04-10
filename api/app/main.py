@@ -2,15 +2,18 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.app.core.config import settings
-from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
+
+from api.app.api.v1.auth import router as auth_router
 from api.app.api.v1.health import router as health_router
-from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.predictions import router as predictions_router
 from api.app.api.v1.realtime import router as realtime_router
+from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.stops import router as stops_router
+from api.app.core.config import settings
+from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
 from api.app.services.realtime_enrichment_service import get_realtime_enrichment_service
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,7 @@ async def realtime_refresh_loop() -> None:
             logger.warning("Background GTFS-RT refresh failed: %s", exc)
         await asyncio.sleep(interval_seconds)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime_configuration()
@@ -46,6 +50,7 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError):
             await refresh_task
         print("Shutting down RouteMinds API")
+
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -68,6 +73,7 @@ API_V1_PREFIX = "/api/v1"
 
 
 def include_api_routes(prefix: str = "") -> None:
+    app.include_router(auth_router, prefix=prefix)
     app.include_router(health_router, prefix=prefix)
     app.include_router(stops_router, prefix=prefix)
     app.include_router(routes_router, prefix=prefix)
@@ -77,6 +83,7 @@ def include_api_routes(prefix: str = "") -> None:
 
 include_api_routes()
 include_api_routes(API_V1_PREFIX)
+
 
 @app.get("/", tags=["Root"])
 async def root():

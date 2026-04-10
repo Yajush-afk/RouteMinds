@@ -7,6 +7,8 @@ import httpx
 from pydantic import ValidationError
 
 from api.app.api.v1.routes import optimize_route
+from api.app.core.auth import require_auth
+from api.app.core.config import settings
 from api.app.core.exceptions import RouteNotFoundException, StopNotFoundException
 from api.app.main import app
 from api.app.schemas.routes import RouteOptimizationRequest
@@ -217,7 +219,9 @@ class RouteOptimizationServiceTests(unittest.TestCase):
 
         result = service.optimize_route("A", "C", query_timestamp)
 
-        self.assertEqual(result.segments[0]["scheduled_departure_unix"], query_timestamp + 600)
+        self.assertEqual(
+            result.segments[0]["scheduled_departure_unix"], query_timestamp + 600
+        )
         self.assertAlmostEqual(result.segments[0]["wait_minutes_before_boarding"], 10.0)
         self.assertAlmostEqual(result.total_predicted_eta_minutes, 14.0)
 
@@ -271,9 +275,12 @@ class StubRouteOptimizationApiService:
 
 class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
+        settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
         app.dependency_overrides.clear()
 
     async def _post_route(self, payload: dict) -> httpx.Response:
@@ -294,7 +301,12 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                     origin_stop_id="A",
                     destination_stop_id="B",
                     query_timestamp_unix=1742803800,
-                )
+                ),
+                _claims={
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                },
             )
 
         self.assertEqual(len(response.stops), 2)
@@ -312,7 +324,12 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                         origin_stop_id="UNKNOWN",
                         destination_stop_id="B",
                         query_timestamp_unix=1742803800,
-                    )
+                    ),
+                    _claims={
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    },
                 )
 
     async def test_no_route_returns_404(self) -> None:
@@ -326,7 +343,12 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                         origin_stop_id="A",
                         destination_stop_id="UNREACHABLE",
                         query_timestamp_unix=1742803800,
-                    )
+                    ),
+                    _claims={
+                        "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                        "role": "authenticated",
+                        "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    },
                 )
 
     async def test_missing_required_field_returns_422(self) -> None:
@@ -336,7 +358,25 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
                 query_timestamp_unix=1742803800,
             )
 
-    async def test_route_endpoint_returns_success_without_authentication(self) -> None:
+    async def test_missing_bearer_token_returns_401(self) -> None:
+        response = await self._post_route(
+            {
+                "origin_stop_id": "A",
+                "destination_stop_id": "B",
+                "query_timestamp_unix": 1742803800,
+            }
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("detail", response.json())
+
+    async def test_authenticated_request_returns_200(self) -> None:
+        app.dependency_overrides[require_auth] = lambda: {
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+        }
+
         with patch(
             "api.app.api.v1.routes.get_route_optimization_service",
             return_value=StubRouteOptimizationApiService(),

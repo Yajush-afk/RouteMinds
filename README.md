@@ -82,7 +82,8 @@ The frontend is built with:
 Current routes:
 
 - `/`: landing page
-- `/map`: map screen
+- `/auth`: Supabase sign-in page with Google OAuth and one-time codes
+- `/map`: protected map screen
 
 The map experience currently focuses on:
 
@@ -92,7 +93,15 @@ The map experience currently focuses on:
 - reverse geocoding
 - user location support
 
-The frontend currently uses external map and geocoding services directly and does not yet call the RouteMinds backend APIs.
+The frontend keeps the current main map implementation as the source of truth for map UX. `/map` is login-gated through Supabase, while `/` and `/auth` remain public.
+
+Frontend auth settings include:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
+
+Authenticated frontend API calls forward the active Supabase bearer token to the backend.
 
 ### Backend
 
@@ -132,6 +141,7 @@ This model is used by the backend to estimate segment travel cost during route o
 
 The FastAPI app exposes the following routes under `/api/v1`:
 
+- `GET /api/v1/auth/me`
 - `GET /api/v1/health`
 - `POST /api/v1/predictions/segments`
 - `GET /api/v1/stops/nearby`
@@ -142,7 +152,40 @@ The FastAPI app exposes the following routes under `/api/v1`:
 There is also a root route at `GET /` that returns app metadata and a docs pointer.
 
 The backend also exposes unversioned aliases for the current API surface such as
-`/health`, `/stops/nearby`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
+`/auth/me`, `/health`, `/stops/nearby`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
+
+### Authentication Contract
+
+The current backend authentication contract is:
+
+- authenticated: `GET /auth/me`, `GET /api/v1/auth/me`
+- public: `GET /health`, `GET /api/v1/health`
+- public: `POST /predictions/segments`, `POST /api/v1/predictions/segments`
+- authenticated: `GET /stops/nearby`, `GET /api/v1/stops/nearby`
+- authenticated: `POST /routes/optimize`, `POST /api/v1/routes/optimize`
+- authenticated plus `realtime:manage`: `GET /realtime/status`, `GET /api/v1/realtime/status`
+- authenticated plus `realtime:manage`: `POST /realtime/refresh`, `POST /api/v1/realtime/refresh`
+
+When `SUPABASE_AUTH_ENABLED=false`, backend auth dependencies are bypassed for local development.
+
+`GET /auth/me` is the backend diagnostic endpoint for verifying that a caller is authenticated and inspecting the normalized claims and permissions seen by the API.
+
+Authenticated API routes require a real Supabase user session token, not just any signed JWT. The backend expects at least:
+
+- a non-empty `sub`
+- `role=authenticated`
+- a non-empty `session_id`
+- `is_anonymous=false` when the claim is present
+
+Realtime authorization reads permissions primarily from `app_metadata.permissions` in the Supabase access token. Legacy root-level `permissions` and `scope` claims are still accepted for compatibility.
+
+The backend auth dependency layer is organized around:
+
+- `require_auth` for bearer-token verification and normalized claims extraction
+- `require_permissions(...)` for reusable permission-based authorization
+- `require_realtime_access` as the realtime-specific permission guard built on top of `require_permissions(...)`
+
+Auth failures are logged with safe metadata only. The backend records the request path, auth event type, subject when available, and missing permissions when relevant. Raw bearer tokens are never logged.
 
 ### Prediction Request Shape
 
@@ -275,17 +318,44 @@ Core backend settings include:
 - `GTFS_RT_CACHE_MAX_AGE_SECONDS`
 - `GTFS_RT_SNAPSHOT_PATH`
 
+Supabase auth settings include:
+
+- `SUPABASE_AUTH_ENABLED`
+- `SUPABASE_URL`
+- `SUPABASE_JWT_ISSUER`
+- `SUPABASE_JWT_AUDIENCE`
+- `SUPABASE_JWT_ALGORITHMS`
+- `SUPABASE_REALTIME_REQUIRED_PERMISSION`
+
+When `SUPABASE_AUTH_ENABLED=true`, the backend validates its Supabase JWT configuration at startup and fails early if:
+
+- `SUPABASE_URL` is missing
+- `SUPABASE_JWT_AUDIENCE` is missing
+- `SUPABASE_REALTIME_REQUIRED_PERMISSION` is missing
+- `SUPABASE_JWT_ISSUER` is not a valid `https://.../auth/v1` issuer URL
+- `SUPABASE_JWT_ISSUER` points to a different host than `SUPABASE_URL`
+- `SUPABASE_JWT_ALGORITHMS` includes unsupported shared-secret algorithms such as `HS256`
+
 `CORS_ALLOW_ORIGINS` must be a comma-separated list of bare origins such as
 `http://localhost:5173,https://app.example.com`. Paths and query strings are rejected.
 
 Recommended development values:
 
 ```env
+SUPABASE_AUTH_ENABLED=true
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_JWT_ISSUER=https://your-project-ref.supabase.co/auth/v1
+SUPABASE_JWT_AUDIENCE=authenticated
+SUPABASE_JWT_ALGORITHMS=RS256
+SUPABASE_REALTIME_REQUIRED_PERMISSION=realtime:manage
 CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
 Recommended production values:
 
+- set `SUPABASE_AUTH_ENABLED=true`
+- use the production Supabase project origin consistently in both `SUPABASE_URL` and `SUPABASE_JWT_ISSUER`
+- keep `SUPABASE_JWT_ALGORITHMS=RS256` unless the project is explicitly configured otherwise
 - set `CORS_ALLOW_ORIGINS` only to your deployed frontend origins
 - do not leave localhost origins in production
 
@@ -298,16 +368,46 @@ Backend tests live in `api/tests/` and currently cover:
 - training pipeline behavior
 - prediction API behavior
 - GTFS graph construction
+- stops API behavior
 - route optimization API behavior
 - real-time enrichment API behavior
+- Supabase auth configuration validation
+- auth dependency behavior, including malformed bearer headers, invalid audience, invalid issuer, expired tokens, and permission failures
 
 API-focused test commands:
 
 ```bash
 conda run -n route_minds python -m unittest api.tests.test_config
+conda run -n route_minds python -m unittest api.tests.test_auth_api
+conda run -n route_minds python -m unittest api.tests.test_stops_api
 conda run -n route_minds python -m unittest api.tests.test_route_optimization_api
 conda run -n route_minds python -m unittest api.tests.test_realtime_enrichment_api
+bun --cwd apps/web typecheck
 ```
+
+Optional live Supabase verification is available through an environment-gated integration test:
+
+```bash
+export ROUTEMINDS_SUPABASE_TEST_BASE_URL=http://127.0.0.1:8000
+export ROUTEMINDS_SUPABASE_TEST_ACCESS_TOKEN=<valid access token>
+export ROUTEMINDS_SUPABASE_TEST_REALTIME_TOKEN=<token with realtime:manage>
+export ROUTEMINDS_SUPABASE_TEST_INVALID_TOKEN=<known invalid token>
+conda run -n route_minds python -m unittest api.tests.test_supabase_live_integration
+```
+
+Only `ROUTEMINDS_SUPABASE_TEST_BASE_URL` and `ROUTEMINDS_SUPABASE_TEST_ACCESS_TOKEN` are required to enable the live suite. The realtime and invalid-token checks are skipped unless those extra variables are set.
+
+## Auth Rollout
+
+Recommended rollout sequence for backend Supabase JWT enforcement:
+
+1. Set and validate all Supabase auth env vars in a development environment.
+2. Start the backend and confirm `/health` stays public.
+3. Verify `/auth/me` returns `401` without a token and `200` with a valid token.
+4. Verify `/routes/optimize` returns `401` without a token and succeeds with a valid authenticated token.
+5. Verify `/realtime/status` and `/realtime/refresh` return `403` for tokens missing `realtime:manage` and `200` for tokens that include it.
+6. Run the local auth-focused unit suites and, when project credentials are available, the live Supabase integration suite.
+7. Promote the same environment contract to your shared or production environment, limiting `CORS_ALLOW_ORIGINS` to deployed frontend origins only.
 
 ## Implementation Notes
 
@@ -316,7 +416,7 @@ Some important realities about the current codebase:
 - the backend is more mature than the frontend-backend integration
 - route optimization is based on predicted segment travel time, not static shortest distance
 - real-time support exists in the backend service layer, but depends on external GTFS-RT configuration and data availability
-- there is no database or deployment stack in the repo yet
+- there is no database or deployment stack in the repo yet, and Supabase-backed API authentication currently protects selected endpoints
 
 ## Near-Term Direction
 
