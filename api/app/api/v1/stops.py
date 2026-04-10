@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from api.app.core.auth import require_auth
 from api.app.core.config import settings
 from api.app.schemas.stops import NearbyStopsResponse
 from api.app.services.gtfs_graph_service import GTFSGraphService
@@ -18,6 +19,7 @@ async def get_nearby_stops(
     lat: float = Query(..., ge=-90.0, le=90.0),
     lon: float = Query(..., ge=-180.0, le=180.0),
     limit: int = Query(5, ge=1, le=20),
+    _claims: dict = Depends(require_auth),
 ) -> NearbyStopsResponse:
     graph_service = get_gtfs_graph_service()
     return NearbyStopsResponse(

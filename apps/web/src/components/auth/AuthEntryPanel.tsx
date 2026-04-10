@@ -1,6 +1,13 @@
-import { useDeferredValue, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 
+import { normalizeReturnToPath } from "@/auth/returnTo"
+import {
+  maskIdentifier,
+  parseIdentifier,
+  type ParsedIdentifier,
+} from "@/auth/identifier"
+import { useRouteMindsAuth } from "@/auth/useRouteMindsAuth"
 import { Button } from "@workspace/ui/components/button"
 import {
   Field,
@@ -13,57 +20,12 @@ import { Input } from "@workspace/ui/components/input"
 import {
   InputOTP,
   InputOTPGroup,
+  InputOTPSeparator,
   InputOTPSlot,
 } from "@workspace/ui/components/input-otp"
 import { Separator } from "@workspace/ui/components/separator"
 import { cn } from "@workspace/ui/lib/utils"
-import { AlertCircle, Mail, PencilLine, Smartphone } from "lucide-react"
-
-type IdentifierKind = "email" | "sms"
-
-type OtpStepState = {
-  channel: IdentifierKind
-  identifier: string
-}
-
-function parseIdentifier(value: string): { kind: IdentifierKind; value: string } {
-  const normalized = value.trim()
-
-  if (!normalized) {
-    throw new Error("Enter your phone number or email.")
-  }
-
-  if (normalized.includes("@")) {
-    return { kind: "email", value: normalized.toLowerCase() }
-  }
-
-  const digits = normalized.replace(/[^\d+]/g, "")
-  if (digits.length < 10) {
-    throw new Error("Enter a valid phone number or email.")
-  }
-
-  return { kind: "sms", value: digits }
-}
-
-function maskIdentifier({
-  kind,
-  value,
-}: {
-  kind: IdentifierKind
-  value: string
-}) {
-  if (kind === "email") {
-    const [local, domain] = value.split("@")
-    if (!local || !domain) {
-      return value
-    }
-    const visibleLocal = local.slice(0, 2)
-    return `${visibleLocal}${"*".repeat(Math.max(local.length - 2, 2))}@${domain}`
-  }
-
-  const suffix = value.slice(-4)
-  return `${"*".repeat(Math.max(value.length - 4, 6))}${suffix}`
-}
+import { AlertCircle, LoaderCircle } from "lucide-react"
 
 function GoogleIcon() {
   return (
@@ -93,7 +55,7 @@ function InlineAlert({
   title,
   message,
 }: {
-  tone?: "destructive" | "warning"
+  tone?: "destructive" | "warning" | "success"
   title: string
   message: string
 }) {
@@ -103,7 +65,9 @@ function InlineAlert({
         "rounded-xl border px-3 py-2 text-sm",
         tone === "warning"
           ? "border-amber-200 bg-amber-50 text-amber-800"
-          : "border-red-200 bg-red-50 text-red-700"
+          : tone === "success"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-red-200 bg-red-50 text-red-700"
       )}
     >
       <p className="flex items-center gap-2 font-medium">
@@ -115,199 +79,360 @@ function InlineAlert({
   )
 }
 
+function buildPendingIdentifier(
+  value: string,
+  kind: "email" | "sms"
+): ParsedIdentifier {
+  return { kind, value }
+}
+
+function buildCodeSentMessage(identifier: ParsedIdentifier) {
+  return `We sent a 6-digit code to ${maskIdentifier(identifier)}.`
+}
+
 export default function AuthEntryPanel() {
+  const {
+    clearPendingIdentifier,
+    configError,
+    error,
+    isAuthenticated,
+    isConfigured,
+    isLoading,
+    loginWithGoogle,
+    pendingIdentifier,
+    pendingIdentifierKind,
+    startPasswordless,
+    verifyOneTimePassword,
+  } = useRouteMindsAuth()
+  const location = useLocation()
   const navigate = useNavigate()
-  const [identifierInput, setIdentifierInput] = useState("")
+  const [identifierInput, setIdentifierInput] = useState(
+    pendingIdentifier ?? ""
+  )
   const [identifierError, setIdentifierError] = useState<string | null>(null)
-  const [otpError, setOtpError] = useState<string | null>(null)
-  const [otpStep, setOtpStep] = useState<OtpStepState | null>(null)
   const [otpValue, setOtpValue] = useState("")
-  const deferredOtpValue = useDeferredValue(otpValue)
+  const [otpError, setOtpError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<
+    "continue" | "google" | "verify" | "resend" | null
+  >(null)
+  const returnTo = normalizeReturnToPath(
+    new URLSearchParams(location.search).get("returnTo")
+  )
+  const hasPendingOtp = !!pendingIdentifier && !!pendingIdentifierKind
 
-  const maskedDestination = otpStep
-    ? maskIdentifier({
-        kind: otpStep.channel,
-        value: otpStep.identifier,
-      })
-    : null
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate(returnTo, { replace: true })
+    }
+  }, [isAuthenticated, isLoading, navigate, returnTo])
 
-  function handleContinue() {
+  useEffect(() => {
+    if (!pendingIdentifier || !pendingIdentifierKind) {
+      return
+    }
+
+    setIdentifierInput(pendingIdentifier)
+    setNotice(
+      `We sent a 6-digit code to ${maskIdentifier(
+        buildPendingIdentifier(pendingIdentifier, pendingIdentifierKind)
+      )}.`
+    )
+  }, [pendingIdentifier, pendingIdentifierKind])
+
+  async function handleContinue() {
+    setIdentifierError(null)
+    setOtpError(null)
+    setNotice(null)
+    setPendingAction("continue")
+
+    try {
+      await startPasswordless(identifierInput, returnTo)
+      setOtpValue("")
+      setNotice(buildCodeSentMessage(parseIdentifier(identifierInput)))
+    } catch (startError) {
+      setIdentifierError(
+        startError instanceof Error
+          ? startError.message
+          : "We could not send a one-time code."
+      )
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleVerifyCode() {
+    setOtpError(null)
+    setPendingAction("verify")
+
+    try {
+      await verifyOneTimePassword(otpValue)
+    } catch (verifyError) {
+      setOtpError(
+        verifyError instanceof Error
+          ? verifyError.message
+          : "We could not verify that code."
+      )
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleResendCode() {
+    if (!pendingIdentifier || !pendingIdentifierKind) {
+      return
+    }
+
+    setOtpError(null)
+    setIdentifierError(null)
+    setNotice(null)
+    setPendingAction("resend")
+
+    try {
+      await startPasswordless(pendingIdentifier, returnTo)
+      setNotice(
+        buildCodeSentMessage(
+          buildPendingIdentifier(pendingIdentifier, pendingIdentifierKind)
+        )
+      )
+    } catch (resendError) {
+      setOtpError(
+        resendError instanceof Error
+          ? resendError.message
+          : "We could not resend the code."
+      )
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleGoogleAuth() {
+    setPendingAction("google")
     setIdentifierError(null)
     setOtpError(null)
 
     try {
-      const parsed = parseIdentifier(identifierInput)
-      setIdentifierInput(parsed.value)
-      setOtpStep({
-        channel: parsed.kind,
-        identifier: parsed.value,
-      })
-      setOtpValue("")
-    } catch (error) {
+      await loginWithGoogle(returnTo)
+    } catch (googleError) {
       setIdentifierError(
-        error instanceof Error
-          ? error.message
-          : "Enter a valid phone number or email."
+        googleError instanceof Error
+          ? googleError.message
+          : "Google sign-in is unavailable."
       )
+    } finally {
+      setPendingAction(null)
     }
   }
 
-  function handleVerify() {
-    if (deferredOtpValue.length !== 6) {
-      setOtpError("Enter any 6-digit demo code to continue.")
-      return
-    }
-
-    navigate("/map")
-  }
-
-  function resetToIdentifierStep() {
-    setOtpError(null)
+  function handleUseAnotherIdentifier() {
+    clearPendingIdentifier()
+    setIdentifierInput("")
     setOtpValue("")
-    setOtpStep(null)
+    setOtpError(null)
+    setNotice(null)
   }
+
+  const intro = hasPendingOtp
+    ? "Enter the one-time code we just sent to finish signing in."
+    : "Enter your phone or email to receive a one-time code."
 
   return (
     <div
-      className="flex flex-col justify-center bg-white px-8 py-14 text-slate-900 sm:px-12 sm:py-16"
+      className="flex flex-col justify-center border border-white/70 bg-white px-8 py-14 text-slate-900 shadow-[0_24px_60px_rgba(37,28,18,0.12)] sm:px-12 sm:py-16"
       style={{ fontFamily: "'Poppins', sans-serif" }}
     >
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-8 flex flex-col gap-2">
           <h1 className="text-3xl font-medium text-[#161616]">
-            Welcome to RouteMinds
+            {hasPendingOtp ? "Confirm your code" : "Welcome to RouteMinds"}
           </h1>
-          <p className="text-sm leading-6 text-[#5f5f5f]">
-            Enter your phone or email
-          </p>
+          <p className="text-sm leading-6 text-[#5f5f5f]">{intro}</p>
         </div>
 
         <FieldGroup>
-          {!otpStep ? (
-            <Field data-invalid={!!identifierError}>
-              <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
-                Phone or email
-              </FieldLabel>
-              <Input
-                id="identifier"
-                autoComplete="email"
-                inputMode="email"
-                value={identifierInput}
-                onChange={(event) => setIdentifierInput(event.target.value)}
-                placeholder="+91 98765 43210"
-                aria-invalid={!!identifierError}
-                className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
-              />
-              <FieldDescription className="text-[#696965]">
-                We&apos;ll show the old one-time code UI, but nothing is sent.
-              </FieldDescription>
-              <FieldError>{identifierError}</FieldError>
-            </Field>
-          ) : (
-            <Field>
-              <FieldLabel className="text-[#1d1d1d]">One-time code</FieldLabel>
-              <div className="rounded-2xl border border-[#e3e3de] bg-[#f7f6f2] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-white p-2 text-[#1d1d1d] shadow-sm">
-                      {otpStep.channel === "sms" ? (
-                        <Smartphone className="size-4" />
-                      ) : (
-                        <Mail className="size-4" />
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <p className="text-sm font-medium text-[#151515]">
-                        Code sent to {maskedDestination}
-                      </p>
-                      <p className="text-sm text-[#666660]">
-                        Enter any 6-digit demo code to continue.
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={resetToIdentifierStep}
-                  >
-                    <PencilLine data-icon="inline-start" />
-                    Edit
-                  </Button>
-                </div>
-                <div className="mt-4 flex flex-col gap-3">
-                  <InputOTP
-                    maxLength={6}
-                    value={otpValue}
-                    onChange={setOtpValue}
-                    aria-invalid={!!otpError}
-                    containerClassName="justify-start"
-                    className="sr-only"
-                  >
-                    <InputOTPGroup className="gap-2 rounded-none border-none bg-transparent ring-0">
-                      {Array.from({ length: 6 }).map((_, index) => (
-                        <InputOTPSlot
-                          key={index}
-                          index={index}
-                          className="size-11 rounded-2xl border border-[#d8d8d3] bg-white text-base text-[#171717] shadow-sm first:rounded-2xl first:border first:border-[#d8d8d3] last:rounded-2xl"
-                        />
-                      ))}
-                    </InputOTPGroup>
-                  </InputOTP>
-                  {otpError ? <FieldError>{otpError}</FieldError> : null}
-                </div>
-              </div>
-            </Field>
-          )}
+          {!hasPendingOtp ? (
+            <>
+              <Field data-invalid={!!identifierError}>
+                <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
+                  Phone or email
+                </FieldLabel>
+                <Input
+                  id="identifier"
+                  autoComplete="email"
+                  inputMode="email"
+                  value={identifierInput}
+                  onChange={(event) => setIdentifierInput(event.target.value)}
+                  placeholder="+91 98765 43210 or name@example.com"
+                  aria-invalid={!!identifierError}
+                  className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
+                />
+                <FieldDescription className="text-[#696965]">
+                  We&apos;ll send a 6-digit sign-in code. New users are created
+                  automatically.
+                </FieldDescription>
+                <FieldError>{identifierError}</FieldError>
+              </Field>
 
-          <div className="flex flex-col gap-3">
-            {!otpStep ? (
-              <Button
-                type="button"
-                size="lg"
-                onClick={handleContinue}
-                className="rounded-xl"
-              >
-                Continue &rarr;
-              </Button>
-            ) : (
-              <>
+              <div className="flex flex-col gap-3">
                 <Button
                   type="button"
                   size="lg"
-                  onClick={handleVerify}
-                  disabled={deferredOtpValue.length !== 6}
-                  className="rounded-xl"
+                  onClick={handleContinue}
+                  disabled={
+                    !isConfigured || isLoading || pendingAction !== null
+                  }
+                  className="cursor-pointer rounded-xl"
                 >
+                  {pendingAction === "continue" ? (
+                    <LoaderCircle
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  ) : null}
+                  Continue
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs text-[#8a8a84]">or</span>
+                <Separator className="flex-1" />
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={handleGoogleAuth}
+                disabled={!isConfigured || isLoading || pendingAction !== null}
+                className="cursor-pointer rounded-xl border-[#cfcfc8] bg-white text-[#151515] shadow-[inset_0_0_0_1px_rgba(207,207,200,0.95)] hover:border-[#bdbdb5] hover:bg-[#f8f8f6] hover:text-[#151515]"
+              >
+                {pendingAction === "google" ? (
+                  <LoaderCircle
+                    data-icon="inline-start"
+                    className="animate-spin"
+                  />
+                ) : (
+                  <GoogleIcon />
+                )}
+                Continue with Google
+              </Button>
+            </>
+          ) : (
+            <>
+              <Field data-invalid={!!otpError}>
+                <FieldLabel htmlFor="otp" className="text-[#1d1d1d]">
+                  Verification code
+                </FieldLabel>
+                <InputOTP
+                  id="otp"
+                  maxLength={6}
+                  value={otpValue}
+                  onChange={setOtpValue}
+                  aria-invalid={!!otpError}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                  </InputOTPGroup>
+                  <InputOTPSeparator />
+                  <InputOTPGroup>
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+                <FieldDescription className="text-[#696965]">
+                  {pendingIdentifier
+                    ? `Enter the code sent to ${maskIdentifier(
+                        buildPendingIdentifier(
+                          pendingIdentifier,
+                          pendingIdentifierKind
+                        )
+                      )}.`
+                    : "Enter the 6-digit code we sent you."}
+                </FieldDescription>
+                <FieldError>{otpError}</FieldError>
+              </Field>
+
+              <div className="flex flex-col gap-3">
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={handleVerifyCode}
+                  disabled={
+                    !isConfigured ||
+                    isLoading ||
+                    pendingAction !== null ||
+                    otpValue.trim().length !== 6
+                  }
+                  className="cursor-pointer rounded-xl"
+                >
+                  {pendingAction === "verify" ? (
+                    <LoaderCircle
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  ) : null}
                   Verify code
                 </Button>
-                <Button type="button" variant="ghost" onClick={handleContinue}>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={handleResendCode}
+                  disabled={
+                    !isConfigured || isLoading || pendingAction !== null
+                  }
+                  className="cursor-pointer rounded-xl"
+                >
+                  {pendingAction === "resend" ? (
+                    <LoaderCircle
+                      data-icon="inline-start"
+                      className="animate-spin"
+                    />
+                  ) : null}
                   Resend code
                 </Button>
-              </>
-            )}
-          </div>
 
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-[#8a8a84]">or</span>
-            <Separator className="flex-1" />
-          </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="lg"
+                  onClick={handleUseAnotherIdentifier}
+                  disabled={pendingAction !== null}
+                  className="cursor-pointer rounded-xl text-[#6d675a]"
+                >
+                  Use a different phone or email
+                </Button>
+              </div>
+            </>
+          )}
 
-          <Button type="button" variant="outline" size="lg" className="rounded-xl">
-            <GoogleIcon />
-            Continue with Google
-          </Button>
+          {notice ? (
+            <InlineAlert tone="success" title="Code sent" message={notice} />
+          ) : null}
 
-          <InlineAlert
-            tone="warning"
-            title="Demo auth screen only"
-            message="This restores the old Aceternity-style auth UI without any Auth0 integration or live sign-in."
-          />
+          {configError ? (
+            <InlineAlert
+              tone="warning"
+              title="Supabase is not configured"
+              message={configError}
+            />
+          ) : null}
+
+          {error ? (
+            <InlineAlert
+              title="Authentication failed"
+              message={error.message}
+            />
+          ) : null}
 
           <p className="text-xs leading-5 text-[#6d6d66]">
-            The visuals and local step transitions are back, but no provider or
-            backend auth flow runs from this page.
+            RouteMinds uses Supabase Auth for Google sign-in and one-time codes
+            over email or SMS.
           </p>
         </FieldGroup>
 

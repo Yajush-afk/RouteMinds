@@ -107,7 +107,9 @@ def make_snapshot(
     gps_timestamp: int | None = None,
     snapshot_time: int | None = None,
 ) -> VehiclePositionSnapshot:
-    gps_timestamp = gps_timestamp or scheduled_unix_from_service_date(start_date, 8 * 3600 + 6 * 60)
+    gps_timestamp = gps_timestamp or scheduled_unix_from_service_date(
+        start_date, 8 * 3600 + 6 * 60
+    )
     snapshot_time = snapshot_time or gps_timestamp + 5
     return VehiclePositionSnapshot(
         vehicle_id=vehicle_id,
@@ -197,8 +199,12 @@ class RealtimeEnrichmentTests(unittest.TestCase):
                     "latitude": 28.709,
                     "longitude": 77.109,
                     "speed_mps": 5.5,
-                    "gps_timestamp": scheduled_unix_from_service_date("20250401", 8 * 3600 + 7 * 60),
-                    "snapshot_time": scheduled_unix_from_service_date("20250401", 8 * 3600 + 7 * 60 + 5),
+                    "gps_timestamp": scheduled_unix_from_service_date(
+                        "20250401", 8 * 3600 + 7 * 60
+                    ),
+                    "snapshot_time": scheduled_unix_from_service_date(
+                        "20250401", 8 * 3600 + 7 * 60 + 5
+                    ),
                 }
             ]
         }
@@ -227,7 +233,10 @@ class RealtimeEnrichmentTests(unittest.TestCase):
                 request=httpx.Request("GET", url, params=params),
             )
 
-        with patch("api.app.services.realtime_enrichment_service.httpx.get", side_effect=fake_get):
+        with patch(
+            "api.app.services.realtime_enrichment_service.httpx.get",
+            side_effect=fake_get,
+        ):
             snapshots = service.fetch_vehicle_positions()
 
         self.assertEqual(len(snapshots), 1)
@@ -267,9 +276,15 @@ class RealtimeEnrichmentTests(unittest.TestCase):
             service._normalize_json_response({"unexpected": "shape"})
 
     def test_enrichment_builds_segment_live_context(self) -> None:
-        trip_1_stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
-        trip_1_ab_midpoint = scheduled_unix_from_service_date("20250401", 8 * 3600 + 2 * 60 + 30)
-        trip_1_stop_c_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 10 * 60)
+        trip_1_stop_b_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 5 * 60
+        )
+        trip_1_ab_midpoint = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 2 * 60 + 30
+        )
+        trip_1_stop_c_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 10 * 60
+        )
         snapshots = [
             make_snapshot(
                 vehicle_id="V1",
@@ -313,23 +328,33 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertNotEqual(context.rolling_segment_delay_3, 0.0)
 
     def test_latest_vehicle_on_same_segment_wins(self) -> None:
-        trip_1_stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
+        trip_1_stop_b_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 5 * 60
+        )
         snapshots = [
             make_snapshot(
                 vehicle_id="V1",
                 trip_id="TRIP_1",
                 latitude=28.705,
                 longitude=77.105,
-                gps_timestamp=scheduled_unix_from_service_date("20250401", 8 * 3600 + 3 * 60),
-                snapshot_time=scheduled_unix_from_service_date("20250401", 8 * 3600 + 3 * 60 + 5),
+                gps_timestamp=scheduled_unix_from_service_date(
+                    "20250401", 8 * 3600 + 3 * 60
+                ),
+                snapshot_time=scheduled_unix_from_service_date(
+                    "20250401", 8 * 3600 + 3 * 60 + 5
+                ),
             ),
             make_snapshot(
                 vehicle_id="V2",
                 trip_id="TRIP_1",
                 latitude=28.706,
                 longitude=77.106,
-                gps_timestamp=scheduled_unix_from_service_date("20250401", 8 * 3600 + 4 * 60),
-                snapshot_time=scheduled_unix_from_service_date("20250401", 8 * 3600 + 4 * 60 + 5),
+                gps_timestamp=scheduled_unix_from_service_date(
+                    "20250401", 8 * 3600 + 4 * 60
+                ),
+                snapshot_time=scheduled_unix_from_service_date(
+                    "20250401", 8 * 3600 + 4 * 60 + 5
+                ),
             ),
         ]
         service = RealtimeEnrichmentService(
@@ -353,16 +378,24 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         )
 
     def test_trip_change_for_same_vehicle_does_not_bleed_delay_history(self) -> None:
-        trip_1_stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
-        trip_2_stop_b_arrival = scheduled_unix_from_service_date("20250401", 9 * 3600 + 5 * 60)
+        trip_1_stop_b_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 5 * 60
+        )
+        trip_2_stop_b_arrival = scheduled_unix_from_service_date(
+            "20250401", 9 * 3600 + 5 * 60
+        )
         snapshots = [
             make_snapshot(
                 vehicle_id="V1",
                 trip_id="TRIP_1",
                 latitude=28.705,
                 longitude=77.105,
-                gps_timestamp=scheduled_unix_from_service_date("20250401", 8 * 3600 + 3 * 60),
-                snapshot_time=scheduled_unix_from_service_date("20250401", 8 * 3600 + 3 * 60 + 5),
+                gps_timestamp=scheduled_unix_from_service_date(
+                    "20250401", 8 * 3600 + 3 * 60
+                ),
+                snapshot_time=scheduled_unix_from_service_date(
+                    "20250401", 8 * 3600 + 3 * 60 + 5
+                ),
             ),
             make_snapshot(
                 vehicle_id="V1",
@@ -370,8 +403,12 @@ class RealtimeEnrichmentTests(unittest.TestCase):
                 start_time="09:00:00",
                 latitude=28.705,
                 longitude=77.105,
-                gps_timestamp=scheduled_unix_from_service_date("20250401", 9 * 3600 + 3 * 60),
-                snapshot_time=scheduled_unix_from_service_date("20250401", 9 * 3600 + 3 * 60 + 5),
+                gps_timestamp=scheduled_unix_from_service_date(
+                    "20250401", 9 * 3600 + 3 * 60
+                ),
+                snapshot_time=scheduled_unix_from_service_date(
+                    "20250401", 9 * 3600 + 3 * 60 + 5
+                ),
             ),
         ]
         service = RealtimeEnrichmentService(
@@ -394,7 +431,11 @@ class RealtimeEnrichmentTests(unittest.TestCase):
 
     def test_refresh_tracks_unmatched_trip_and_vehicle_counts(self) -> None:
         snapshots = [
-            make_snapshot(vehicle_id="V1", trip_id="", gps_timestamp=scheduled_unix_from_service_date("20250401", 8 * 3600 + 60)),
+            make_snapshot(
+                vehicle_id="V1",
+                trip_id="",
+                gps_timestamp=scheduled_unix_from_service_date("20250401", 8 * 3600 + 60),
+            ),
             make_snapshot(vehicle_id="V2", trip_id="UNKNOWN_TRIP"),
             make_snapshot(vehicle_id="V3", trip_id="TRIP_1"),
         ]
@@ -412,7 +453,9 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(result["unmatched_vehicles"], 2)
 
     def test_routing_uses_live_delay_context_when_available(self) -> None:
-        trip_1_stop_c_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 10 * 60)
+        trip_1_stop_c_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 10 * 60
+        )
         snapshots = [
             make_snapshot(
                 vehicle_id="V1",
@@ -442,13 +485,21 @@ class RealtimeEnrichmentTests(unittest.TestCase):
             "api.app.services.realtime_enrichment_service.time.time",
             return_value=trip_1_stop_c_arrival + 200,
         ):
-            route_service.optimize_route("STOP_B", "STOP_C", trip_1_stop_c_arrival + 200)
+            route_service.optimize_route(
+                "STOP_B", "STOP_C", trip_1_stop_c_arrival + 200
+            )
 
-        self.assertGreaterEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
-        self.assertGreater(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
+        self.assertGreaterEqual(
+            prediction_service.last_records[0]["prev_segment_delay"], 0.0
+        )
+        self.assertGreater(
+            prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0
+        )
 
     def test_routing_uses_static_route_id_for_live_context_lookup(self) -> None:
-        trip_1_stop_c_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 10 * 60)
+        trip_1_stop_c_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 10 * 60
+        )
         snapshots = [
             make_snapshot(
                 vehicle_id="V1",
@@ -488,13 +539,21 @@ class RealtimeEnrichmentTests(unittest.TestCase):
             realtime_enrichment_service=realtime_service,
         )
 
-        route_service.optimize_route("STOP_A", "STOP_B", scheduled_unix_from_service_date("20250401", 8 * 3600))
+        route_service.optimize_route(
+            "STOP_A",
+            "STOP_B",
+            scheduled_unix_from_service_date("20250401", 8 * 3600),
+        )
 
         self.assertEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
-        self.assertEqual(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
+        self.assertEqual(
+            prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0
+        )
 
     def test_stale_live_context_falls_back_to_zero(self) -> None:
-        trip_1_stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
+        trip_1_stop_b_arrival = scheduled_unix_from_service_date(
+            "20250401", 8 * 3600 + 5 * 60
+        )
         snapshots = [
             make_snapshot(
                 vehicle_id="V1",
@@ -520,7 +579,9 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         route_service.optimize_route("STOP_A", "STOP_B", trip_1_stop_b_arrival + 600)
 
         self.assertEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
-        self.assertEqual(prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0)
+        self.assertEqual(
+            prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0
+        )
         self.assertFalse(realtime_service.get_status()["cache_is_fresh"])
 
     def test_snapshot_persistence_writes_json_file(self) -> None:
@@ -582,9 +643,12 @@ class StubRealtimeApiService:
 
 class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        self.original_supabase_auth_enabled = settings.SUPABASE_AUTH_ENABLED
+        settings.SUPABASE_AUTH_ENABLED = True
         app.dependency_overrides.clear()
 
     def tearDown(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = self.original_supabase_auth_enabled
         app.dependency_overrides.clear()
 
     async def _request(self, method: str, path: str) -> httpx.Response:
@@ -600,7 +664,14 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await refresh_realtime()
+            response = await refresh_realtime(
+                _claims={
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "app_metadata": {"permissions": ["realtime:manage"]},
+                }
+            )
 
         self.assertEqual(response.fetched_snapshots, 3)
         self.assertEqual(response.enriched_segments, 2)
@@ -611,23 +682,26 @@ class RealtimeApiTests(unittest.IsolatedAsyncioTestCase):
             "api.app.api.v1.realtime.get_realtime_enrichment_service",
             return_value=StubRealtimeApiService(),
         ):
-            response = await realtime_status()
+            response = await realtime_status(
+                _claims={
+                    "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+                    "role": "authenticated",
+                    "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+                    "app_metadata": {"permissions": ["realtime:manage"]},
+                }
+            )
 
         self.assertTrue(response.configured)
         self.assertEqual(response.cached_segments, 2)
         self.assertTrue(response.cache_is_fresh)
         self.assertEqual(response.auth_mode, "query")
 
-    async def test_realtime_endpoints_are_public(self) -> None:
-        with patch(
-            "api.app.api.v1.realtime.get_realtime_enrichment_service",
-            return_value=StubRealtimeApiService(),
-        ):
-            refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
-            status_response = await self._request("GET", "/api/v1/realtime/status")
+    async def test_realtime_endpoints_require_bearer_token(self) -> None:
+        refresh_response = await self._request("POST", "/api/v1/realtime/refresh")
+        status_response = await self._request("GET", "/api/v1/realtime/status")
 
-        self.assertEqual(refresh_response.status_code, 200)
-        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(refresh_response.status_code, 401)
+        self.assertEqual(status_response.status_code, 401)
 
 
 if __name__ == "__main__":

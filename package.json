@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "dev:all": "./scripts/dev.sh",
     "web:dev": "bun --cwd apps/web dev",
     "lint": "turbo lint",
     "format": "turbo format",
