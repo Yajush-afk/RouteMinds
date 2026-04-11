@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
 
 import { useRouteMindsAuth } from "@/auth/useRouteMindsAuth"
 import { Button } from "@workspace/ui/components/button"
-import { cn } from "@workspace/ui/lib/utils"
 
 export default function Navbar() {
   const { isAuthenticated, isConfigured, logout } = useRouteMindsAuth()
@@ -21,18 +20,13 @@ export default function Navbar() {
   }, [])
 
   return (
-    <nav className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-4 md:px-6">
-      <div
-        className={cn(
-          "mx-auto flex max-w-7xl items-center justify-between rounded-xl bg-background/75 px-4 py-2.5 backdrop-blur-md transition-[border-color,box-shadow,background-color] duration-200 sm:px-5 sm:py-3",
-          isScrolled
-            ? "border border-border/50 shadow-sm"
-            : "border border-transparent shadow-none"
-        )}
-      >
+    <nav className="w-full px-4 py-4 sm:px-6 md:px-10 lg:px-24"
+    style={{ backgroundColor: "white" }}>
+      <div className="mx-auto flex max-w-7xl items-center justify-between">
+        
         <Link
           to="/"
-          className="landing-heading text-base tracking-tight text-foreground sm:text-lg md:text-xl"
+          className="font-heading text-base tracking-tight text-foreground sm:text-lg md:text-xl"
         >
           RouteMinds
         </Link>
@@ -40,37 +34,38 @@ export default function Navbar() {
         <div className="hidden items-center gap-8 md:flex">
           <a
             href="#about"
-            className="text-sm text-foreground transition-colors hover:text-primary"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             About
           </a>
           <a
             href="#features"
-            className="text-sm text-foreground transition-colors hover:text-primary"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             Features
           </a>
           <a
             href="#why-delhi"
-            className="text-sm text-foreground transition-colors hover:text-primary"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             Why Delhi?
           </a>
           <a
             href="#faqs"
-            className="text-sm text-foreground transition-colors hover:text-primary"
+            className="font-body text-base font-medium text-foreground transition-colors hover:text-foreground/70"
           >
             FAQs
           </a>
         </div>
 
+       
         <div className="flex items-center gap-2">
           {isConfigured && isAuthenticated ? (
             <>
               <Button
                 asChild
                 variant="outline"
-                className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
+                className="!font-body rounded-[12px] landing-hover-lift bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300"
               >
                 <Link to="/map">Open Map</Link>
               </Button>
@@ -78,7 +73,7 @@ export default function Navbar() {
                 type="button"
                 variant="ghost"
                 onClick={logout}
-                className="rounded-xl px-4 text-sm text-foreground"
+                className="font-body flex landing-hover-lift items-center gap-2 rounded-[12px] border-foreground/20 bg-background shadow-2xl px-4 text-sm text-foreground transition-colors hover:bg-foreground/5 sm:px-5 border border-zinc-300"
               >
                 Log out
               </Button>
@@ -88,14 +83,13 @@ export default function Navbar() {
               <Button
                 asChild
                 variant="ghost"
-                className="rounded-xl px-4 text-sm text-foreground hover:bg-transparent hover:text-[var(--landing-primary)]"
-              >
+                className="font-body flex landing-hover-lift items-center gap-2 rounded-[12px] border-foreground/20 bg-background shadow-2xl px-4 text-sm text-foreground transition-colors hover:bg-foreground/5 sm:px-5 border border-zinc-300" >
                 <Link to="/auth">Log In</Link>
               </Button>
               <Button
                 asChild
-                variant="outline"
-                className="landing-hover-lift rounded-xl border-border bg-transparent px-4 text-sm text-foreground shadow-none hover:!border-[var(--landing-primary)] hover:!bg-[var(--landing-primary)] hover:!text-[var(--landing-text)] sm:px-5 md:px-6"
+                
+                className="!font-body rounded-[12px] landing-hover-lift bg-black text-white shadow-2xl hover:!bg-gray-900 border border-zinc-300"
               >
                 <Link to="/auth">Get Started</Link>
               </Button>
@@ -103,6 +97,8 @@ export default function Navbar() {
           )}
         </div>
       </div>
+
+      <div className="mx-auto mt-4 max-w-7xl border-t border-border" />
     </nav>
   )
 }

@@ -1,219 +1,103 @@
-import {
-  Brain,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  MapPin,
-  Route,
-  Shield,
-  TrendingUp,
-} from "lucide-react"
-import { useEffect, useRef, useState } from "react"
-import { useReducedMotion } from "motion/react"
-
-import { Button } from "@workspace/ui/components/button"
-import {
-  Carousel,
-  type CarouselApi,
-  CarouselContent,
-  CarouselItem,
-} from "@workspace/ui/components/carousel"
+import { Brain, Clock, Route, TrendingUp } from "lucide-react"
 import { cn } from "@workspace/ui/lib/utils"
 
 const features = [
   {
-    icon: <Clock className="h-6 w-6 text-primary" />,
+    title: "Route Rationalization",
+    description:
+      "Dynamic route optimization based on ML-predicted segment travel times rather than static shortest distance.",
+    icon: <Route className="h-6 w-6" />,
+  },
+  {
     title: "Delay Prediction",
     description:
-      "Estimate tomorrow's delays using historical traffic data and seasonal patterns unique to Delhi's road network.",
+      "XGBoost-based segment travel-time prediction model trained on GTFS and simulated delay data.",
+    icon: <Clock className="h-6 w-6" />,
   },
   {
-    icon: <TrendingUp className="h-6 w-6 text-primary" />,
-    title: "Real-Time Traffic Analysis",
+    title: "Route Selection",
     description:
-      "Continuously monitors live road conditions and adjusts route predictions instantly across Delhi's road network.",
+      "Dijkstra-based route optimization using predicted segment costs over a transit graph.",
+    icon: <Brain className="h-6 w-6" />,
   },
   {
-    icon: <MapPin className="h-6 w-6 text-primary" />,
-    title: "Road Parameter Monitoring",
+    title: "Real-time Enrichment",
     description:
-      "Tracks road closures, construction zones, VIP movements and weather impact on routes in real time.",
-  },
-  {
-    icon: <Route className="h-6 w-6 text-primary" />,
-    title: "Multi-Route Rationalization",
-    description:
-      "Balances traffic load across multiple routes to reduce city-wide congestion and ensure optimal distribution.",
-  },
-  {
-    icon: <Brain className="h-6 w-6 text-primary" />,
-    title: "Smart Suggestions",
-    description:
-      "Get the best route based on predicted congestion, real-time variables and your travel history.",
-  },
-  {
-    icon: <Shield className="h-6 w-6 text-primary" />,
-    title: "Historical Pattern Learning",
-    description:
-      "ML model continuously learns from past traffic data to improve future predictions with every passing day.",
+      "GTFS-RT vehicle position ingestion with live segment delay context injection into routing decisions.",
+    icon: <TrendingUp className="h-6 w-6" />,
   },
 ]
 
-export default function FeaturesSection() {
-  const sectionRef = useRef<HTMLElement>(null)
-  const shouldReduceMotion = useReducedMotion()
-  const [api, setApi] = useState<CarouselApi>()
-  const [current, setCurrent] = useState(0)
-  const [isInView, setIsInView] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
+const Feature = ({
+  title,
+  description,
+  icon,
+  index,
+}: {
+  title: string
+  description: string
+  icon: React.ReactNode
+  index: number
+}) => {
+  return (
+    <div
+      className={cn(
+        "flex flex-col py-10 px-8 relative group/feature border-border transition-colors duration-200",
+        // right border for left column items
+        index % 2 === 0 && "md:border-r",
+        // top border for bottom row items
+        index >= 2 && "border-t",
+      )}
+    >
+      
+<div className="opacity-0 group-hover/feature:opacity-100 transition duration-200 absolute inset-0 bg-gradient-to-br from-[#fef3c7]/50 to-transparent pointer-events-none" />
+      {/* Icon */}
+      <div className="mb-4 relative z-10 text-[#5a2d14]">
+        {icon}
+      </div>
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 767px)")
-    const updateIsMobile = () => setIsMobile(mediaQuery.matches)
+      <div className="text-base font-semibold mb-3 relative z-10">
+        <div className="absolute -left-8 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-border group-hover/feature:bg-[#5a2d14] transition-all duration-200 origin-center" />
+        <span className="group-hover/feature:translate-x-2 transition duration-200 inline-block font-heading text-foreground">
+          {title}
+        </span>
+      </div>
 
-    updateIsMobile()
-    mediaQuery.addEventListener("change", updateIsMobile)
+      <p className="font-body text-sm leading-relaxed text-muted-foreground max-w-xs relative z-10">
+        {description}
+      </p>
+    </div>
+  )
+}
 
-    return () => mediaQuery.removeEventListener("change", updateIsMobile)
-  }, [])
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsInView(entry.isIntersecting),
-      { threshold: 0.3 }
-    )
-
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
-    return () => observer.disconnect()
-  }, [])
-
-  useEffect(() => {
-    if (!api) return
-
-    const updateCurrent = () => {
-      setCurrent(api.selectedScrollSnap())
-    }
-
-    updateCurrent()
-    api.on("select", updateCurrent)
-    api.on("reInit", updateCurrent)
-
-    return () => {
-      api.off("select", updateCurrent)
-      api.off("reInit", updateCurrent)
-    }
-  }, [api])
-
-  useEffect(() => {
-    if (!api || !isInView || shouldReduceMotion || isPaused || isMobile) return
-
-    const interval = window.setInterval(() => {
-      api.scrollNext()
-    }, 2500)
-
-    return () => window.clearInterval(interval)
-  }, [api, isInView, shouldReduceMotion, isPaused, isMobile])
-
+export default function FeaturesSectionGrid() {
   return (
     <section
       id="features"
-      ref={sectionRef}
-      className="bg-secondary px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+      className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
       <div className="mx-auto max-w-7xl">
-        <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
-          What We Offer
-        </p>
-        <div className="mb-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-          <h2 className="landing-heading max-w-lg text-3xl leading-tight text-foreground sm:text-4xl md:text-5xl">
-            Travel Smarter,
-            <br /> Not Harder.
+
+        <div className="mb-20 flex flex-col items-center text-center sm:mb-28">
+          <p className="font-body mb-4 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
+            What We Offer
+          </p>
+          <h2 className="font-heading mb-4 whitespace-nowrap text-4xl   sm:text-4xl md:text-5xl">
+            Travel Smarter, Not Harder.
           </h2>
+          <p className="font-body max-w-md text-lg leading-relaxed text-muted-foreground">
+            Our ML engine processes thousands of real-time data points to keep Delhi moving efficiently.
+          </p>
         </div>
-        <p className="mb-8 max-w-md text-base leading-relaxed text-muted-foreground sm:mb-12">
-          Our ML engine processes thousands of real-time data points to keep
-          Delhi moving efficiently.
-        </p>
 
-        <Carousel
-          setApi={setApi}
-          opts={{ align: "start", loop: true }}
-          className="w-full"
-        >
-          <CarouselContent>
-            {features.map((feature) => (
-              <CarouselItem key={feature.title}>
-                <div
-                  className="flex min-h-60 flex-col justify-between rounded-2xl border border-border bg-background p-5 sm:min-h-55 sm:p-6 md:min-h-50 md:p-8"
-                  onMouseEnter={() => setIsPaused(true)}
-                  onMouseLeave={() => setIsPaused(false)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary shadow-sm sm:h-11 sm:w-11">
-                      {feature.icon}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 sm:mt-6">
-                    <h3 className="landing-heading mb-2 text-lg text-foreground sm:text-xl">
-                      {feature.title}
-                    </h3>
-                    <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-                      {feature.description}
-                    </p>
-                  </div>
-                </div>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-        </Carousel>
-
-        <div className="mt-4 flex items-center justify-between gap-3 sm:mt-6">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-lg"
-            onClick={() => api?.scrollPrev()}
-            className="shrink-0 rounded-xl border-border bg-background text-muted-foreground shadow-none hover:border-primary hover:bg-background hover:text-primary"
-            aria-label="Previous feature"
-          >
-            <ChevronLeft />
-          </Button>
-
-          <div className="flex flex-1 justify-center gap-2">
+        <div className="border border-border rounded-2xl overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-2">
             {features.map((feature, index) => (
-              <Button
-                key={feature.title}
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => api?.scrollTo(index)}
-                aria-label={`Go to ${feature.title}`}
-                className={cn(
-                  "h-2 min-w-0 rounded-xl px-0 transition-all duration-300 hover:bg-primary/20",
-                  current === index
-                    ? "w-6 bg-primary hover:bg-primary/90"
-                    : "w-2 bg-border"
-                )}
-              />
+              <Feature key={feature.title} {...feature} index={index} />
             ))}
           </div>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-lg"
-            onClick={() => api?.scrollNext()}
-            className="shrink-0 rounded-xl border-border bg-background text-muted-foreground shadow-none hover:border-primary hover:bg-background hover:text-primary"
-            aria-label="Next feature"
-          >
-            <ChevronRight />
-          </Button>
         </div>
+
       </div>
     </section>
   )

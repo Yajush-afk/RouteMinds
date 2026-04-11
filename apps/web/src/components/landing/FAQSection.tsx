@@ -40,18 +40,18 @@ export default function FAQSection() {
   return (
     <section
       id="faqs"
-      className="bg-background px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+      className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
     >
       <div className="mx-auto max-w-3xl">
         {/* Header */}
         <div className="mb-10 text-center sm:mb-12">
-          <p className="mb-3 text-xs font-semibold tracking-widest text-primary uppercase">
+          <p className="font-body mb-3 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
             Got Questions?
           </p>
-          <h2 className="landing-heading text-3xl text-foreground sm:text-4xl md:text-5xl">
+          <h2 className="font-heading text-3xl text-foreground sm:text-4xl md:text-5xl">
             Frequently Asked Questions
           </h2>
-          <div className="mx-auto mt-4 h-1 w-10 rounded-full bg-primary"></div>
+          <div className="mx-auto mt-4 h-1 w-10 rounded-full bg-[#5a2d14]"></div>
         </div>
 
         {/* FAQ Items */}
@@ -60,12 +60,12 @@ export default function FAQSection() {
             <Fragment key={faq.question}>
               <AccordionItem
                 value={`item-${index}`}
-                className="border-b-0 not-last:border-b-0"
+                className=" border-b-0 not-last:border-b-0"
               >
-                <AccordionTrigger className="landing-heading rounded-xl text-base sm:text-lg">
+                <AccordionTrigger className=" !font-heading rounded-xl text-base sm:text-lg !no-underline hover:!no-underline focus:!no-underline ">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent className="text-sm leading-relaxed sm:text-base">
+                <AccordionContent className="font-body text-sm leading-relaxed sm:text-base">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
