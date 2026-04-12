@@ -239,6 +239,21 @@ These folders are intended to hold generated and local data assets and are large
 - Node.js `>=20`
 - Conda with an environment named `route_minds`
 
+### One-Time Setup
+
+From the repository root:
+
+```bash
+bun install
+conda env create -f environment.yml
+```
+
+If the Conda env already exists and you want to sync it with the repo definition:
+
+```bash
+conda env update -n route_minds -f environment.yml --prune
+```
+
 ### Workspace Commands
 
 From the repository root:
@@ -257,8 +272,10 @@ These commands use Turborepo for workspace task orchestration.
 From the repository root:
 
 ```bash
-bun --cwd apps/web dev
+bun run web:dev
 ```
+
+The frontend dev server URL is printed by Vite in the terminal.
 
 Frontend build:
 
@@ -271,7 +288,31 @@ bun --cwd apps/web build
 From the repository root:
 
 ```bash
-conda run -n route_minds uvicorn api.app.main:app --reload
+bun run api:start
+```
+
+Useful backend lifecycle commands from the repository root:
+
+```bash
+bun run api:status
+bun run api:stop
+bun run api:restart
+```
+
+By default the backend runs on `127.0.0.1:8000`. To use another port:
+
+```bash
+BACKEND_PORT=8001 bun run api:start
+```
+
+To run frontend and backend together, use two terminals:
+
+```bash
+# terminal 1
+bun run web:dev
+
+# terminal 2
+bun run api:start
 ```
 
 Swagger UI will be available at:
