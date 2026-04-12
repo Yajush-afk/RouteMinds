@@ -5,7 +5,11 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
-    "dev:all": "./scripts/dev.sh",
+    "api:dev": "bun run api:start",
+    "api:start": "sh -c 'PORT=${BACKEND_PORT:-8000}; pids=$(lsof -tiTCP:$PORT -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then echo \"Stopping stale processes on :$PORT\"; kill $pids || true; sleep 1; fi; pids=$(lsof -tiTCP:$PORT -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then echo \"Force-stopping processes on :$PORT\"; kill -9 $pids || true; fi; echo \"Starting backend on http://127.0.0.1:$PORT\"; conda run -n route_minds uvicorn api.app.main:app --reload --host 127.0.0.1 --port $PORT'",
+    "api:stop": "sh -c 'PORT=${BACKEND_PORT:-8000}; pids=$(lsof -tiTCP:$PORT -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then echo \"Stopping backend on :$PORT\"; kill $pids || true; sleep 1; pids=$(lsof -tiTCP:$PORT -sTCP:LISTEN || true); if [ -n \"$pids\" ]; then echo \"Force-stopping backend on :$PORT\"; kill -9 $pids || true; fi; else echo \"No backend process found on :$PORT\"; fi'",
+    "api:restart": "bun run api:stop && bun run api:start",
+    "api:status": "sh -c 'PORT=${BACKEND_PORT:-8000}; lsof -nP -iTCP:$PORT -sTCP:LISTEN || echo \"No backend process listening on :$PORT\"'",
     "web:dev": "bun --cwd apps/web dev",
     "lint": "turbo lint",
     "format": "turbo format",
