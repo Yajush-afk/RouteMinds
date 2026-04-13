@@ -15,6 +15,7 @@ from api.app.services.realtime_enrichment_service import RealtimeEnrichmentServi
 
 MIN_EDGE_WEIGHT_MINUTES = 0.01
 TRANSFER_BUFFER_MINUTES = 5.0
+MAX_RELIABILITY_PENALTY_MINUTES = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +23,9 @@ class RouteOptimizationResult:
     stops: list[dict[str, str | float]]
     segments: list[dict[str, str | int | float]]
     total_predicted_eta_minutes: float
+    predicted_eta_lower_minutes: float
+    predicted_eta_upper_minutes: float
+    route_reliability_score: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,12 +84,16 @@ class RouteOptimizationService:
                 ],
                 segments=[],
                 total_predicted_eta_minutes=0.0,
+                predicted_eta_lower_minutes=0.0,
+                predicted_eta_upper_minutes=0.0,
+                route_reliability_score=1.0,
             )
 
         (
             previous_step_by_state,
             edge_prediction_cache,
-            distances,
+            generalized_costs,
+            etas,
             best_destination_state,
         ) = self._run_dijkstra(
             graph,
@@ -100,11 +108,15 @@ class RouteOptimizationService:
         route_edges = self._reconstruct_edges(previous_step_by_state, best_destination_state)
         stops = self._build_stop_path(graph, origin_stop_key, route_edges)
         segments = self._build_segment_predictions(route_edges, edge_prediction_cache)
+        route_summary = self._build_route_summary(segments)
 
         return RouteOptimizationResult(
             stops=stops,
             segments=segments,
-            total_predicted_eta_minutes=float(distances[best_destination_state]),
+            total_predicted_eta_minutes=float(etas[best_destination_state]),
+            predicted_eta_lower_minutes=route_summary["predicted_eta_lower_minutes"],
+            predicted_eta_upper_minutes=route_summary["predicted_eta_upper_minutes"],
+            route_reliability_score=route_summary["route_reliability_score"],
         )
 
     def _run_dijkstra(
@@ -117,10 +129,12 @@ class RouteOptimizationService:
         dict[RouteState, RouteStep],
         dict[tuple[SegmentEdge, int], dict[str, float]],
         dict[RouteState, float],
+        dict[RouteState, float],
         RouteState | None,
     ]:
         origin_state = RouteState(stop_id=origin_stop_id, active_route_id=None)
-        distances: dict[RouteState, float] = {origin_state: 0.0}
+        generalized_costs: dict[RouteState, float] = {origin_state: 0.0}
+        etas: dict[RouteState, float] = {origin_state: 0.0}
         arrival_timestamps: dict[RouteState, int] = {origin_state: query_timestamp_unix}
         previous_step_by_state: dict[RouteState, RouteStep] = {}
         edge_prediction_cache: dict[tuple[SegmentEdge, int], dict[str, float]] = {}
@@ -134,7 +148,7 @@ class RouteOptimizationService:
         while heap:
             current_distance, _, current_state = heapq.heappop(heap)
 
-            if current_distance > distances.get(current_state, float("inf")):
+            if current_distance > generalized_costs.get(current_state, float("inf")):
                 continue
 
             current_arrival_timestamp = arrival_timestamps[current_state]
@@ -164,7 +178,7 @@ class RouteOptimizationService:
                 prediction_cache_key = (edge, departure_timestamp)
                 prediction = edge_prediction_cache[prediction_cache_key]
                 edge_weight = max(
-                    prediction["predicted_actual_segment_minutes"],
+                    float(prediction["predicted_actual_segment_minutes"]),
                     MIN_EDGE_WEIGHT_MINUTES,
                 )
                 scheduled_wait_minutes_before_boarding = max(
@@ -180,15 +194,26 @@ class RouteOptimizationService:
                     current_arrival_timestamp=current_arrival_timestamp,
                     scheduled_wait_minutes=scheduled_wait_minutes_before_boarding,
                 )
+                reliability_penalty_minutes = self._reliability_penalty_minutes(
+                    prediction=prediction,
+                    boarding_feasibility_score=boarding_feasibility_score,
+                )
+                candidate_eta = (
+                    etas[current_state] + wait_minutes_before_boarding + edge_weight
+                )
                 candidate_distance = (
-                    current_distance + wait_minutes_before_boarding + edge_weight
+                    current_distance
+                    + wait_minutes_before_boarding
+                    + edge_weight
+                    + reliability_penalty_minutes
                 )
                 next_state = RouteState(
                     stop_id=edge.to_stop_id,
                     active_route_id=edge.route_id,
                 )
-                if candidate_distance < distances.get(next_state, float("inf")):
-                    distances[next_state] = candidate_distance
+                if candidate_distance < generalized_costs.get(next_state, float("inf")):
+                    generalized_costs[next_state] = candidate_distance
+                    etas[next_state] = candidate_eta
                     arrival_timestamps[next_state] = departure_timestamp + int(
                         round(edge_weight * 60.0)
                     )
@@ -211,7 +236,8 @@ class RouteOptimizationService:
         return (
             previous_step_by_state,
             edge_prediction_cache,
-            distances,
+            generalized_costs,
+            etas,
             best_destination_state,
         )
 
@@ -404,6 +430,22 @@ class RouteOptimizationService:
         )
         return expected_wait_minutes, max(0.05, boarding_feasibility_score)
 
+    def _reliability_penalty_minutes(
+        self,
+        *,
+        prediction: dict[str, float],
+        boarding_feasibility_score: float,
+    ) -> float:
+        segment_uncertainty = max(0.0, float(prediction.get("segment_uncertainty", 0.0)))
+        segment_reliability_score = float(
+            prediction.get("segment_reliability_score", 1.0)
+        )
+        instability = (1.0 - max(0.0, min(1.0, segment_reliability_score))) + (
+            1.0 - max(0.0, min(1.0, boarding_feasibility_score))
+        )
+        penalty = (segment_uncertainty * 0.25) + (instability * 1.25)
+        return min(MAX_RELIABILITY_PENALTY_MINUTES, penalty)
+
     def _reconstruct_edges(
         self,
         previous_step_by_state: dict[RouteState, RouteStep],
@@ -468,6 +510,73 @@ class RouteOptimizationService:
                 ][
                     "predicted_segment_delay_minutes"
                 ],
+                "segment_uncertainty": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("segment_uncertainty", 0.0),
+                "segment_reliability_score": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("segment_reliability_score", 1.0),
+                "predicted_eta_lower_minutes": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get(
+                    "predicted_eta_lower_minutes",
+                    edge_prediction_cache[(step.edge, step.scheduled_departure_unix)][
+                        "predicted_actual_segment_minutes"
+                    ],
+                ),
+                "predicted_eta_upper_minutes": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get(
+                    "predicted_eta_upper_minutes",
+                    edge_prediction_cache[(step.edge, step.scheduled_departure_unix)][
+                        "predicted_actual_segment_minutes"
+                    ],
+                ),
             }
             for step in route_steps
         ]
+
+    def _build_route_summary(
+        self,
+        segments: list[dict[str, str | int | float]],
+    ) -> dict[str, float]:
+        if not segments:
+            return {
+                "predicted_eta_lower_minutes": 0.0,
+                "predicted_eta_upper_minutes": 0.0,
+                "route_reliability_score": 1.0,
+            }
+
+        total_wait = sum(float(segment["wait_minutes_before_boarding"]) for segment in segments)
+        total_lower = total_wait + sum(
+            float(segment["predicted_eta_lower_minutes"]) for segment in segments
+        )
+        total_upper = total_wait + sum(
+            float(segment["predicted_eta_upper_minutes"]) for segment in segments
+        )
+        reliability_weight_sum = 0.0
+        weighted_reliability = 0.0
+        for segment in segments:
+            segment_weight = (
+                float(segment["predicted_actual_segment_minutes"])
+                + float(segment["wait_minutes_before_boarding"])
+            )
+            segment_reliability = float(segment.get("segment_reliability_score", 1.0))
+            boarding_feasibility = float(segment.get("boarding_feasibility_score", 1.0))
+            combined_reliability = max(
+                0.05,
+                min(0.99, (segment_reliability * 0.7) + (boarding_feasibility * 0.3)),
+            )
+            reliability_weight_sum += segment_weight
+            weighted_reliability += combined_reliability * segment_weight
+
+        route_reliability_score = (
+            weighted_reliability / reliability_weight_sum
+            if reliability_weight_sum > 0.0
+            else 1.0
+        )
+        return {
+            "predicted_eta_lower_minutes": max(0.0, total_lower),
+            "predicted_eta_upper_minutes": max(total_lower, total_upper),
+            "route_reliability_score": max(0.05, min(0.99, route_reliability_score)),
+        }

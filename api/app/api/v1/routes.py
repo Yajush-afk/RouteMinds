@@ -45,4 +45,7 @@ async def optimize_route(
         stops=result.stops,
         segments=result.segments,
         total_predicted_eta_minutes=result.total_predicted_eta_minutes,
+        predicted_eta_lower_minutes=result.predicted_eta_lower_minutes,
+        predicted_eta_upper_minutes=result.predicted_eta_upper_minutes,
+        route_reliability_score=result.route_reliability_score,
     )

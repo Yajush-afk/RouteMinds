@@ -31,6 +31,10 @@ class StubPredictionService:
                     "predicted_actual_segment_minutes": predicted_actual,
                     "predicted_segment_delay_minutes": predicted_actual
                     - float(record["scheduled_segment_minutes"]),
+                    "segment_uncertainty": 0.5,
+                    "segment_reliability_score": 0.9,
+                    "predicted_eta_lower_minutes": max(0.01, predicted_actual - 0.5),
+                    "predicted_eta_upper_minutes": predicted_actual + 0.5,
                 }
             )
         return predictions
@@ -131,6 +135,9 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
         self.assertEqual(len(result.segments), 2)
         self.assertAlmostEqual(result.total_predicted_eta_minutes, 8.0)
+        self.assertGreater(result.predicted_eta_upper_minutes, result.total_predicted_eta_minutes)
+        self.assertLess(result.predicted_eta_lower_minutes, result.total_predicted_eta_minutes)
+        self.assertGreater(result.route_reliability_score, 0.0)
 
     def test_same_origin_and_destination_returns_zero_eta(self) -> None:
         graph_service = StubGraphService(build_test_graph())
@@ -353,6 +360,60 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         self.assertAlmostEqual(result.segments[0]["wait_minutes_before_boarding"], 10.0)
         self.assertEqual(result.segments[0]["boarding_feasibility_score"], 1.0)
 
+    def test_service_prefers_more_reliable_option_when_eta_is_close(self) -> None:
+        class ReliabilityAwarePredictionService:
+            def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
+                predictions = []
+                for record in segment_records:
+                    edge_key = (str(record["from_stop_id"]), str(record["to_stop_id"]))
+                    if edge_key == ("A", "B"):
+                        predictions.append(
+                            {
+                                "predicted_actual_segment_minutes": 4.0,
+                                "predicted_segment_delay_minutes": -1.0,
+                                "segment_uncertainty": 3.5,
+                                "segment_reliability_score": 0.15,
+                                "predicted_eta_lower_minutes": 0.5,
+                                "predicted_eta_upper_minutes": 7.5,
+                            }
+                        )
+                    else:
+                        predictions.append(
+                            {
+                                "predicted_actual_segment_minutes": 5.0,
+                                "predicted_segment_delay_minutes": 0.0,
+                                "segment_uncertainty": 0.4,
+                                "segment_reliability_score": 0.95,
+                                "predicted_eta_lower_minutes": 4.6,
+                                "predicted_eta_upper_minutes": 5.4,
+                            }
+                        )
+                return predictions
+
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 1.0, 1.0, 5.0),
+            SegmentEdge("R2", "A", "C", 1, 1.0, 1.0, 5.0),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": edges},
+        )
+        service = RouteOptimizationService(
+            StubGraphService(graph),
+            ReliabilityAwarePredictionService(),
+        )
+
+        result = service.optimize_route("A", "C", 1742803800)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "C"])
+        self.assertGreaterEqual(result.route_reliability_score, 0.9)
+
 
 class StubRouteOptimizationApiService:
     def optimize_route(
@@ -396,9 +457,16 @@ class StubRouteOptimizationApiService:
                         "boarding_feasibility_score": 0.9,
                         "predicted_actual_segment_minutes": 4.5,
                         "predicted_segment_delay_minutes": -0.5,
+                        "segment_uncertainty": 0.6,
+                        "segment_reliability_score": 0.92,
+                        "predicted_eta_lower_minutes": 3.9,
+                        "predicted_eta_upper_minutes": 5.1,
                     }
                 ],
                 "total_predicted_eta_minutes": 4.5,
+                "predicted_eta_lower_minutes": 3.9,
+                "predicted_eta_upper_minutes": 5.1,
+                "route_reliability_score": 0.92,
             },
         )()
 
@@ -442,6 +510,7 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(response.stops), 2)
         self.assertEqual(len(response.segments), 1)
         self.assertEqual(response.total_predicted_eta_minutes, 4.5)
+        self.assertEqual(response.route_reliability_score, 0.92)
 
     async def test_unknown_stop_returns_404(self) -> None:
         with patch(

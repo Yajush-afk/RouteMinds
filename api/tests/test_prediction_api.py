@@ -47,12 +47,31 @@ class PredictionServiceTests(unittest.TestCase):
                 {
                     "predicted_actual_segment_minutes": 10.5,
                     "predicted_segment_delay_minutes": 9.1,
+                    "segment_uncertainty": predictions[0]["segment_uncertainty"],
+                    "segment_reliability_score": predictions[0]["segment_reliability_score"],
+                    "predicted_eta_lower_minutes": predictions[0]["predicted_eta_lower_minutes"],
+                    "predicted_eta_upper_minutes": predictions[0]["predicted_eta_upper_minutes"],
                 },
                 {
                     "predicted_actual_segment_minutes": 8.0,
                     "predicted_segment_delay_minutes": 6.6,
+                    "segment_uncertainty": predictions[1]["segment_uncertainty"],
+                    "segment_reliability_score": predictions[1]["segment_reliability_score"],
+                    "predicted_eta_lower_minutes": predictions[1]["predicted_eta_lower_minutes"],
+                    "predicted_eta_upper_minutes": predictions[1]["predicted_eta_upper_minutes"],
                 },
             ],
+        )
+        self.assertGreater(predictions[0]["segment_uncertainty"], 0.0)
+        self.assertGreaterEqual(predictions[0]["segment_reliability_score"], 0.0)
+        self.assertLessEqual(predictions[0]["segment_reliability_score"], 1.0)
+        self.assertLessEqual(
+            predictions[0]["predicted_eta_lower_minutes"],
+            predictions[0]["predicted_actual_segment_minutes"],
+        )
+        self.assertGreaterEqual(
+            predictions[0]["predicted_eta_upper_minutes"],
+            predictions[0]["predicted_actual_segment_minutes"],
         )
 
 
@@ -81,6 +100,10 @@ class PredictionApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload["predictions"]), 1)
         self.assertIn("predicted_actual_segment_minutes", payload["predictions"][0])
         self.assertIn("predicted_segment_delay_minutes", payload["predictions"][0])
+        self.assertIn("segment_uncertainty", payload["predictions"][0])
+        self.assertIn("segment_reliability_score", payload["predictions"][0])
+        self.assertIn("predicted_eta_lower_minutes", payload["predictions"][0])
+        self.assertIn("predicted_eta_upper_minutes", payload["predictions"][0])
 
     async def test_missing_required_field_returns_422(self) -> None:
         payload = make_segment_payload()
