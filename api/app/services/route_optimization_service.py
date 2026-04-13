@@ -264,6 +264,12 @@ class RouteOptimizationService:
     ) -> dict[str, str | int | float]:
         prev_segment_delay = 0.0
         rolling_segment_delay_3 = 0.0
+        route_delay_minutes_live = 0.0
+        segment_slowdown_index = 1.0
+        corridor_slowdown_score_live = 1.0
+        bunching_indicator = 0.0
+        headway_irregularity_score_live = 0.0
+        stop_recent_arrival_gap_minutes = 0.0
         if self.realtime_enrichment_service:
             live_context = self.realtime_enrichment_service.get_segment_live_context(
                 edge.route_id,
@@ -273,6 +279,18 @@ class RouteOptimizationService:
             if live_context:
                 prev_segment_delay = live_context.prev_segment_delay
                 rolling_segment_delay_3 = live_context.rolling_segment_delay_3
+                route_delay_minutes_live = live_context.route_delay_minutes_live
+                segment_slowdown_index = live_context.segment_slowdown_index
+                corridor_slowdown_score_live = (
+                    live_context.corridor_slowdown_score_live
+                )
+                bunching_indicator = live_context.bunching_indicator
+                headway_irregularity_score_live = (
+                    live_context.headway_irregularity_score_live
+                )
+                stop_recent_arrival_gap_minutes = (
+                    live_context.stop_recent_arrival_gap_minutes
+                )
 
         return {
             "route_id": edge.route_id,
@@ -285,6 +303,12 @@ class RouteOptimizationService:
             "scheduled_segment_minutes": edge.scheduled_segment_minutes,
             "prev_segment_delay": prev_segment_delay,
             "rolling_segment_delay_3": rolling_segment_delay_3,
+            "route_delay_minutes_live": route_delay_minutes_live,
+            "segment_slowdown_index": segment_slowdown_index,
+            "corridor_slowdown_score_live": corridor_slowdown_score_live,
+            "bunching_indicator": bunching_indicator,
+            "headway_irregularity_score_live": headway_irregularity_score_live,
+            "stop_recent_arrival_gap_minutes": stop_recent_arrival_gap_minutes,
         }
 
     def _reconstruct_edges(

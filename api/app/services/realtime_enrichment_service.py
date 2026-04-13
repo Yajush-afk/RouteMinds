@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import statistics
 import time
 from collections import defaultdict, deque
 from dataclasses import asdict
@@ -55,8 +56,15 @@ class SegmentLiveContext:
     route_id: str
     from_stop_id: str
     to_stop_id: str
+    scheduled_segment_minutes: float
     prev_segment_delay: float
     rolling_segment_delay_3: float
+    route_delay_minutes_live: float
+    segment_slowdown_index: float
+    corridor_slowdown_score_live: float
+    bunching_indicator: float
+    headway_irregularity_score_live: float
+    stop_recent_arrival_gap_minutes: float
     last_update_timestamp: int
     vehicle_id: str
     trip_id: str
@@ -67,8 +75,29 @@ class SegmentObservation:
     route_id: str
     from_stop_id: str
     to_stop_id: str
+    scheduled_segment_minutes: float
     delay_minutes: float
     observation_timestamp: int
+
+
+@dataclass(frozen=True, slots=True)
+class RouteLiveContext:
+    route_id: str
+    rolling_route_delay_minutes: float
+    corridor_slowdown_score_live: float
+    bunching_indicator: float
+    headway_irregularity_score_live: float
+    last_update_timestamp: int
+
+
+@dataclass(frozen=True, slots=True)
+class StopLiveContext:
+    route_id: str
+    stop_id: str
+    recent_arrival_gap_minutes: float
+    headway_irregularity_score_live: float
+    bunching_indicator: float
+    last_update_timestamp: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +225,31 @@ def load_trip_stop_events(gtfs_static_dir: str | Path) -> dict[str, tuple[TripSt
         trip_id: tuple(sorted(events, key=lambda event: event.stop_sequence))
         for trip_id, events in trip_stop_events.items()
     }
+
+
+def derive_scheduled_headways_by_route_stop(
+    trip_stop_events: dict[str, tuple[TripStopEvent, ...]],
+) -> dict[tuple[str, str], float]:
+    arrival_seconds_by_route_stop: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for events in trip_stop_events.values():
+        for event in events:
+            arrival_seconds_by_route_stop[(event.route_id, event.stop_id)].append(
+                event.arrival_seconds
+            )
+
+    scheduled_headways: dict[tuple[str, str], float] = {}
+    for key, arrival_seconds in arrival_seconds_by_route_stop.items():
+        if len(arrival_seconds) < 2:
+            continue
+        sorted_arrivals = sorted(arrival_seconds)
+        headways_minutes = [
+            (current - previous) / 60.0
+            for previous, current in zip(sorted_arrivals, sorted_arrivals[1:])
+            if current > previous
+        ]
+        if headways_minutes:
+            scheduled_headways[key] = float(statistics.median(headways_minutes))
+    return scheduled_headways
 
 
 class GTFSRealtimeIngestionService:
@@ -419,9 +473,29 @@ class RealtimeEnrichmentService:
         self.ingestion_service = ingestion_service
         self.cache_max_age_seconds = cache_max_age_seconds
         self.trip_stop_events = load_trip_stop_events(gtfs_static_dir)
+        self.scheduled_headways_by_route_stop = derive_scheduled_headways_by_route_stop(
+            self.trip_stop_events
+        )
         self.segment_live_context: dict[tuple[str, str, str], SegmentLiveContext] = {}
+        self.route_live_context: dict[str, RouteLiveContext] = {}
+        self.stop_live_context: dict[tuple[str, str], StopLiveContext] = {}
         self.segment_delay_history: dict[tuple[str, str], deque[float]] = defaultdict(
             lambda: deque(maxlen=3)
+        )
+        self.route_delay_history: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=10)
+        )
+        self.route_slowdown_history: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=10)
+        )
+        self.route_headway_irregularity_history: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=10)
+        )
+        self.route_bunching_history: dict[str, deque[float]] = defaultdict(
+            lambda: deque(maxlen=10)
+        )
+        self.stop_arrival_history: dict[tuple[str, str], deque[int]] = defaultdict(
+            lambda: deque(maxlen=5)
         )
         self.latest_vehicle_snapshot: dict[str, VehiclePositionSnapshot] = {}
         self.latest_vehicle_observation: dict[str, SegmentObservation] = {}
@@ -526,6 +600,37 @@ class RealtimeEnrichmentService:
             return None
         return context
 
+    def get_route_live_context(
+        self,
+        route_id: str | int,
+        reference_timestamp: int | None = None,
+    ) -> RouteLiveContext | None:
+        key = str(route_id)
+        with self._state_lock:
+            context = self.route_live_context.get(key)
+        if context is None:
+            return None
+        reference_timestamp = reference_timestamp or int(time.time())
+        if self._context_is_stale(context, reference_timestamp):
+            return None
+        return context
+
+    def get_stop_live_context(
+        self,
+        route_id: str | int,
+        stop_id: str | int,
+        reference_timestamp: int | None = None,
+    ) -> StopLiveContext | None:
+        key = (str(route_id), str(stop_id))
+        with self._state_lock:
+            context = self.stop_live_context.get(key)
+        if context is None:
+            return None
+        reference_timestamp = reference_timestamp or int(time.time())
+        if self._context_is_stale(context, reference_timestamp):
+            return None
+        return context
+
     def get_status(self) -> dict[str, int | bool | str | None]:
         configured = bool(
             self.ingestion_service.vehicle_positions_url and self.ingestion_service.api_key
@@ -592,12 +697,65 @@ class RealtimeEnrichmentService:
         history.append(segment_observation.delay_minutes)
         rolling_delay = sum(history) / len(history)
 
+        route_delay_history = self.route_delay_history[segment_observation.route_id]
+        route_delay_history.append(segment_observation.delay_minutes)
+        rolling_route_delay = sum(route_delay_history) / len(route_delay_history)
+
+        segment_slowdown_index = self._segment_slowdown_index(segment_observation)
+        route_slowdown_history = self.route_slowdown_history[segment_observation.route_id]
+        route_slowdown_history.append(segment_slowdown_index)
+        corridor_slowdown_score_live = sum(route_slowdown_history) / len(
+            route_slowdown_history
+        )
+
+        (
+            stop_recent_arrival_gap_minutes,
+            headway_irregularity_score_live,
+            bunching_indicator,
+        ) = self._update_stop_and_headway_context(segment_observation)
+
+        route_headway_irregularity_history = self.route_headway_irregularity_history[
+            segment_observation.route_id
+        ]
+        route_headway_irregularity_history.append(headway_irregularity_score_live)
+        route_bunching_history = self.route_bunching_history[segment_observation.route_id]
+        route_bunching_history.append(bunching_indicator)
+
+        self.route_live_context[segment_observation.route_id] = RouteLiveContext(
+            route_id=segment_observation.route_id,
+            rolling_route_delay_minutes=rolling_route_delay,
+            corridor_slowdown_score_live=corridor_slowdown_score_live,
+            bunching_indicator=sum(route_bunching_history) / len(route_bunching_history),
+            headway_irregularity_score_live=(
+                sum(route_headway_irregularity_history)
+                / len(route_headway_irregularity_history)
+            ),
+            last_update_timestamp=snapshot.snapshot_time,
+        )
+        self.stop_live_context[
+            (segment_observation.route_id, segment_observation.to_stop_id)
+        ] = StopLiveContext(
+            route_id=segment_observation.route_id,
+            stop_id=segment_observation.to_stop_id,
+            recent_arrival_gap_minutes=stop_recent_arrival_gap_minutes,
+            headway_irregularity_score_live=headway_irregularity_score_live,
+            bunching_indicator=bunching_indicator,
+            last_update_timestamp=snapshot.snapshot_time,
+        )
+
         self.segment_live_context[key] = SegmentLiveContext(
             route_id=segment_observation.route_id,
             from_stop_id=segment_observation.from_stop_id,
             to_stop_id=segment_observation.to_stop_id,
+            scheduled_segment_minutes=segment_observation.scheduled_segment_minutes,
             prev_segment_delay=previous_delay,
             rolling_segment_delay_3=rolling_delay,
+            route_delay_minutes_live=rolling_route_delay,
+            segment_slowdown_index=segment_slowdown_index,
+            corridor_slowdown_score_live=corridor_slowdown_score_live,
+            bunching_indicator=bunching_indicator,
+            headway_irregularity_score_live=headway_irregularity_score_live,
+            stop_recent_arrival_gap_minutes=stop_recent_arrival_gap_minutes,
             last_update_timestamp=snapshot.snapshot_time,
             vehicle_id=snapshot.vehicle_id,
             trip_id=snapshot.trip_id,
@@ -667,6 +825,10 @@ class RealtimeEnrichmentService:
                     route_id=to_event.route_id,
                     from_stop_id=from_event.stop_id,
                     to_stop_id=to_event.stop_id,
+                    scheduled_segment_minutes=max(
+                        0.0,
+                        (to_event.arrival_seconds - from_event.departure_seconds) / 60.0,
+                    ),
                     delay_minutes=(
                         snapshot.gps_timestamp - scheduled_arrival_unix
                     )
@@ -676,6 +838,44 @@ class RealtimeEnrichmentService:
                 best_candidate_score = candidate_score
 
         return best_candidate
+
+    def _segment_slowdown_index(self, observation: SegmentObservation) -> float:
+        baseline_minutes = max(observation.scheduled_segment_minutes, 0.5)
+        effective_minutes = max(
+            observation.scheduled_segment_minutes + max(observation.delay_minutes, 0.0),
+            0.1,
+        )
+        return effective_minutes / baseline_minutes
+
+    def _update_stop_and_headway_context(
+        self,
+        observation: SegmentObservation,
+    ) -> tuple[float, float, float]:
+        stop_key = (observation.route_id, observation.to_stop_id)
+        arrivals = self.stop_arrival_history[stop_key]
+        recent_arrival_gap_minutes = 0.0
+        if arrivals:
+            recent_arrival_gap_minutes = max(
+                0.0,
+                (observation.observation_timestamp - arrivals[-1]) / 60.0,
+            )
+
+        scheduled_headway_minutes = self.scheduled_headways_by_route_stop.get(stop_key)
+        headway_irregularity_score_live = 0.0
+        bunching_indicator = 0.0
+        if scheduled_headway_minutes and recent_arrival_gap_minutes > 0.0:
+            headway_irregularity_score_live = abs(
+                recent_arrival_gap_minutes - scheduled_headway_minutes
+            ) / max(scheduled_headway_minutes, 1.0)
+            if recent_arrival_gap_minutes < max(1.0, scheduled_headway_minutes * 0.5):
+                bunching_indicator = 1.0
+
+        arrivals.append(observation.observation_timestamp)
+        return (
+            recent_arrival_gap_minutes,
+            headway_irregularity_score_live,
+            bunching_indicator,
+        )
 
     def _to_stop_sequence(
         self,
