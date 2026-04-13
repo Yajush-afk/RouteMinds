@@ -36,7 +36,9 @@ class RouteStep:
     to_state: RouteState
     edge: SegmentEdge
     scheduled_departure_unix: int
+    scheduled_wait_minutes_before_boarding: float
     wait_minutes_before_boarding: float
+    boarding_feasibility_score: float
 
 
 class RouteOptimizationService:
@@ -165,9 +167,18 @@ class RouteOptimizationService:
                     prediction["predicted_actual_segment_minutes"],
                     MIN_EDGE_WEIGHT_MINUTES,
                 )
-                wait_minutes_before_boarding = max(
+                scheduled_wait_minutes_before_boarding = max(
                     0.0,
                     (departure_timestamp - current_arrival_timestamp) / 60.0,
+                )
+                (
+                    wait_minutes_before_boarding,
+                    boarding_feasibility_score,
+                ) = self._estimate_wait_and_boarding(
+                    edge=edge,
+                    current_state=current_state,
+                    current_arrival_timestamp=current_arrival_timestamp,
+                    scheduled_wait_minutes=scheduled_wait_minutes_before_boarding,
                 )
                 candidate_distance = (
                     current_distance + wait_minutes_before_boarding + edge_weight
@@ -186,7 +197,11 @@ class RouteOptimizationService:
                         to_state=next_state,
                         edge=edge,
                         scheduled_departure_unix=departure_timestamp,
+                        scheduled_wait_minutes_before_boarding=(
+                            scheduled_wait_minutes_before_boarding
+                        ),
                         wait_minutes_before_boarding=wait_minutes_before_boarding,
+                        boarding_feasibility_score=boarding_feasibility_score,
                     )
                     heapq.heappush(
                         heap,
@@ -311,6 +326,84 @@ class RouteOptimizationService:
             "stop_recent_arrival_gap_minutes": stop_recent_arrival_gap_minutes,
         }
 
+    def _estimate_wait_and_boarding(
+        self,
+        *,
+        edge: SegmentEdge,
+        current_state: RouteState,
+        current_arrival_timestamp: int,
+        scheduled_wait_minutes: float,
+    ) -> tuple[float, float]:
+        expected_wait_minutes = scheduled_wait_minutes
+        headway_irregularity_score_live = 0.0
+        bunching_indicator = 0.0
+        rolling_route_delay_minutes = 0.0
+
+        if not self.realtime_enrichment_service:
+            return expected_wait_minutes, 1.0
+
+        stop_context = self.realtime_enrichment_service.get_stop_live_context(
+            edge.route_id,
+            edge.from_stop_id,
+            reference_timestamp=current_arrival_timestamp,
+        )
+        route_context = self.realtime_enrichment_service.get_route_live_context(
+            edge.route_id,
+            reference_timestamp=current_arrival_timestamp,
+        )
+        scheduled_headway_minutes = (
+            self.realtime_enrichment_service.get_scheduled_headway_minutes(
+                edge.route_id,
+                edge.from_stop_id,
+            )
+        )
+
+        if stop_context:
+            headway_irregularity_score_live = (
+                stop_context.headway_irregularity_score_live
+            )
+            bunching_indicator = stop_context.bunching_indicator
+
+        if route_context:
+            rolling_route_delay_minutes = route_context.rolling_route_delay_minutes
+
+        if scheduled_headway_minutes and scheduled_headway_minutes <= 15.0:
+            headway_based_wait_minutes = scheduled_headway_minutes / 2.0
+            if stop_context and stop_context.recent_arrival_gap_minutes > 0.0:
+                headway_based_wait_minutes = max(
+                    headway_based_wait_minutes,
+                    stop_context.recent_arrival_gap_minutes / 2.0,
+                )
+            expected_wait_minutes = max(expected_wait_minutes, headway_based_wait_minutes)
+
+        instability_penalty_minutes = 0.0
+        if stop_context:
+            instability_penalty_minutes += min(
+                4.0,
+                headway_irregularity_score_live * max(1.0, expected_wait_minutes * 0.5),
+            )
+            instability_penalty_minutes += min(1.5, bunching_indicator)
+
+        if route_context and rolling_route_delay_minutes > 0.0:
+            instability_penalty_minutes += min(5.0, rolling_route_delay_minutes / 6.0)
+
+        if current_state.active_route_id is not None and current_state.active_route_id != edge.route_id:
+            instability_penalty_minutes += 1.0
+
+        expected_wait_minutes = max(
+            scheduled_wait_minutes,
+            expected_wait_minutes + instability_penalty_minutes,
+        )
+
+        boarding_feasibility_score = 1.0 - min(
+            0.95,
+            (expected_wait_minutes / 20.0) * 0.45
+            + min(1.0, headway_irregularity_score_live) * 0.3
+            + min(1.0, bunching_indicator) * 0.15
+            + min(1.0, max(0.0, rolling_route_delay_minutes) / 20.0) * 0.1,
+        )
+        return expected_wait_minutes, max(0.05, boarding_feasibility_score)
+
     def _reconstruct_edges(
         self,
         previous_step_by_state: dict[RouteState, RouteStep],
@@ -362,7 +455,9 @@ class RouteOptimizationService:
                 "normalized_stop_position": step.edge.normalized_stop_position,
                 "distance_to_prev_stop_km": step.edge.distance_to_prev_stop_km,
                 "scheduled_segment_minutes": step.edge.scheduled_segment_minutes,
+                "scheduled_wait_minutes_before_boarding": step.scheduled_wait_minutes_before_boarding,
                 "wait_minutes_before_boarding": step.wait_minutes_before_boarding,
+                "boarding_feasibility_score": step.boarding_feasibility_score,
                 "predicted_actual_segment_minutes": edge_prediction_cache[
                     (step.edge, step.scheduled_departure_unix)
                 ][

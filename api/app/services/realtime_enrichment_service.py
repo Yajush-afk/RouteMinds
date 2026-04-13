@@ -631,6 +631,13 @@ class RealtimeEnrichmentService:
             return None
         return context
 
+    def get_scheduled_headway_minutes(
+        self,
+        route_id: str | int,
+        stop_id: str | int,
+    ) -> float | None:
+        return self.scheduled_headways_by_route_stop.get((str(route_id), str(stop_id)))
+
     def get_status(self) -> dict[str, int | bool | str | None]:
         configured = bool(
             self.ingestion_service.vehicle_positions_url and self.ingestion_service.api_key

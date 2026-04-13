@@ -27,7 +27,9 @@ class RouteSegmentPrediction(BaseModel):
     normalized_stop_position: float
     distance_to_prev_stop_km: float
     scheduled_segment_minutes: float
+    scheduled_wait_minutes_before_boarding: float = Field(default=0.0, ge=0.0)
     wait_minutes_before_boarding: float = Field(default=0.0, ge=0.0)
+    boarding_feasibility_score: float = Field(ge=0.0, le=1.0)
     predicted_actual_segment_minutes: float
     predicted_segment_delay_minutes: float
 
