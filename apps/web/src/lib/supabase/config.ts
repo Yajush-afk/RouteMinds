@@ -7,7 +7,12 @@ function readClientEnv(name: string) {
 }
 
 function readServerEnv(name: string) {
-  const value = process.env[name]
+  const processEnv = (
+    globalThis as typeof globalThis & {
+      process?: { env?: Record<string, string | undefined> }
+    }
+  ).process?.env
+  const value = processEnv?.[name]
   return typeof value === "string" ? value.trim() : ""
 }
 
