@@ -19,6 +19,7 @@ type MapViewportProps = {
   cameraIntent: CameraIntent | null
   onCameraIntentHandled: () => void
   onLocateRequest: () => void
+  onMapReady?: () => void
 }
 
 function MapViewport({
@@ -32,6 +33,7 @@ function MapViewport({
   cameraIntent,
   onCameraIntentHandled,
   onLocateRequest,
+  onMapReady,
 }: MapViewportProps) {
   const mapRef = useRef<MapRef | null>(null)
 
@@ -45,7 +47,11 @@ function MapViewport({
 
   return (
     <>
-      <MapCanvas ref={mapRef} className="absolute inset-0 h-full w-full">
+      <MapCanvas
+        ref={mapRef}
+        className="absolute inset-0 h-full w-full"
+        onReady={onMapReady}
+      >
         <MapCameraController
           mapRef={mapRef}
           intent={cameraIntent}

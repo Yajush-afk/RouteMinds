@@ -1,30 +1,129 @@
-import type { MouseEvent } from "react";
-import { FaGithub } from "react-icons/fa";
-import { motion } from "motion/react";
-import { Link } from "react-router-dom";
-import { fadeIn, fadeUp } from "@/components/landing/motion";
+import type { MouseEvent } from "react"
+import { LogOut } from "lucide-react"
+import { FaGithub } from "react-icons/fa"
+import { motion } from "motion/react"
+import { Link } from "react-router-dom"
+import { useRouteMindsAuth } from "@/auth/useRouteMindsAuth"
+import { fadeIn, fadeUp } from "@/components/landing/motion"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
 
 function getSectionOffset(sectionId: string) {
-  return sectionId === "why-delhi" ? 24 : 80;
+  return sectionId === "why-delhi" ? 24 : 80
+}
+
+function getAvatarFallback(name?: string, email?: string) {
+  const words = (name ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]/gi, ""))
+    .filter(Boolean)
+
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.slice(0, 2).toUpperCase()
+  }
+
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase()
+  }
+
+  const emailLocalPart = (email ?? "")
+    .split("@")[0]
+    ?.replace(/[^a-z0-9]/gi, "")
+    .trim()
+
+  if (emailLocalPart) {
+    return emailLocalPart.slice(0, 2).toUpperCase()
+  }
+
+  return "RM"
+}
+
+function NavbarAuthAction({ mobile = false }: { mobile?: boolean }) {
+  const { error, isAuthenticated, isConfigured, isLoading, logout, user } =
+    useRouteMindsAuth()
+  const signupClassName = mobile
+    ? "inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-black transition hover:bg-white/90"
+    : "inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
+  const avatarSizeClassName = mobile ? "size-9" : "size-10"
+  const avatarFallback = getAvatarFallback(user?.name, user?.email)
+  const triggerTitle = user?.name ?? user?.email ?? "Account menu"
+
+  if (!isConfigured || error) {
+    return (
+      <Link to="/map" className={signupClassName}>
+        SignUp
+      </Link>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div
+        aria-hidden="true"
+        className={`${avatarSizeClassName} rounded-full border border-white/20 bg-white/12 backdrop-blur-sm`}
+      />
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Link to="/map" className={signupClassName}>
+        SignUp
+      </Link>
+    )
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Account menu"
+        title={triggerTitle}
+        className={`inline-flex ${avatarSizeClassName} items-center justify-center rounded-full border border-white/20 bg-white/12 p-0 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60`}
+      >
+        <Avatar className="size-full">
+          <AvatarImage src={user?.picture} alt={triggerTitle} />
+          <AvatarFallback className="bg-white/90 text-xs font-semibold tracking-[0.14em] text-black">
+            {avatarFallback}
+          </AvatarFallback>
+        </Avatar>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8} className="w-36">
+        <DropdownMenuItem onClick={logout}>
+          <LogOut className="size-4" />
+          Log out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export function LandingNavbar() {
   const handleSectionClick =
     (sectionId: string) => (event: MouseEvent<HTMLAnchorElement>) => {
-      event.preventDefault();
+      event.preventDefault()
 
-      const target = document.getElementById(sectionId);
+      const target = document.getElementById(sectionId)
       if (!target) {
-        return;
+        return
       }
 
       const targetTop =
         target.getBoundingClientRect().top +
         window.scrollY +
-        getSectionOffset(sectionId);
+        getSectionOffset(sectionId)
 
-      window.scrollTo({ top: targetTop, behavior: "smooth" });
-    };
+      window.scrollTo({ top: targetTop, behavior: "smooth" })
+    }
 
   return (
     <motion.header
@@ -58,12 +157,7 @@ export function LandingNavbar() {
               <FaGithub className="size-4" />
               <span className="hidden sm:inline">GitHub</span>
             </a>
-            <Link
-              to="/map"
-              className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-black transition hover:bg-white/90"
-            >
-              SignUp
-            </Link>
+            <NavbarAuthAction mobile />
           </div>
         </motion.div>
 
@@ -134,14 +228,9 @@ export function LandingNavbar() {
             <FaGithub className="size-4" />
             <span className="hidden sm:inline">GitHub</span>
           </a>
-          <Link
-            to="/map"
-            className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
-          >
-            SignUp
-          </Link>
+          <NavbarAuthAction />
         </motion.div>
       </motion.nav>
     </motion.header>
-  );
+  )
 }

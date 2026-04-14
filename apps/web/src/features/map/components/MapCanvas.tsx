@@ -1,4 +1,4 @@
-import { forwardRef, memo } from "react"
+import { forwardRef, memo, useRef } from "react"
 import Map from "react-map-gl/maplibre"
 import type { PropsWithChildren } from "react"
 import type { MapRef } from "react-map-gl/maplibre"
@@ -17,6 +17,7 @@ import { cn } from "@workspace/ui/lib/utils"
 
 type MapCanvasProps = PropsWithChildren<{
   className?: string
+  onReady?: () => void
 }>
 
 const INITIAL_VIEW_STATE = {
@@ -32,13 +33,25 @@ const MAX_BOUNDS = [
 
 const MapCanvas = memo(
   forwardRef<MapRef, MapCanvasProps>(function MapCanvas(
-    { className, children },
+    { className, children, onReady },
     ref
   ) {
+    const hasReportedReady = useRef(false)
+
+    function handleLoad() {
+      if (hasReportedReady.current) {
+        return
+      }
+
+      hasReportedReady.current = true
+      onReady?.()
+    }
+
     return (
       <div className={cn("absolute inset-0 h-full w-full", className)}>
         <Map
           ref={ref}
+          onLoad={handleLoad}
           initialViewState={INITIAL_VIEW_STATE}
           mapStyle={OPENFREEMAP_STYLE_URL}
           maxBounds={MAX_BOUNDS}
