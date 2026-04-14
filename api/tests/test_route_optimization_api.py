@@ -665,6 +665,10 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(response.segments), 1)
         self.assertEqual(response.total_predicted_eta_minutes, 4.5)
         self.assertEqual(response.route_reliability_score, 0.92)
+        self.assertEqual(response.total_wait_minutes, 0.0)
+        self.assertEqual(response.transfer_count, 0)
+        self.assertTrue(response.selection_reasons)
+        self.assertIn("generalized cost", response.explanation_summary.lower())
         self.assertEqual(response.generalized_cost_minutes, 4.7)
 
     async def test_unknown_stop_returns_404(self) -> None:
@@ -745,6 +749,8 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("total_predicted_eta_minutes", response.json())
+        self.assertIn("selection_reasons", response.json())
+        self.assertIn("cost_breakdown", response.json())
 
 
 if __name__ == "__main__":

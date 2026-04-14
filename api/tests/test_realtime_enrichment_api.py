@@ -330,6 +330,8 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertGreater(context.route_delay_minutes_live, 0.0)
         self.assertGreater(context.segment_slowdown_index, 1.0)
         self.assertGreater(context.corridor_slowdown_score_live, 1.0)
+        self.assertGreaterEqual(context.corridor_instability_score_live, 0.0)
+        self.assertLessEqual(context.service_quality_score, 1.0)
 
     def test_route_and_stop_live_context_capture_headway_proxies(self) -> None:
         stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
@@ -374,6 +376,8 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(stop_context.bunching_indicator, 1.0)
         self.assertGreaterEqual(route_context.corridor_slowdown_score_live, 1.0)
         self.assertGreater(route_context.headway_irregularity_score_live, 0.0)
+        self.assertGreaterEqual(route_context.corridor_instability_score_live, 0.0)
+        self.assertGreater(route_context.service_quality_score, 0.0)
 
     def test_latest_vehicle_on_same_segment_wins(self) -> None:
         trip_1_stop_b_arrival = scheduled_unix_from_service_date(
