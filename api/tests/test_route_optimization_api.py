@@ -31,6 +31,10 @@ class StubPredictionService:
                     "predicted_actual_segment_minutes": predicted_actual,
                     "predicted_segment_delay_minutes": predicted_actual
                     - float(record["scheduled_segment_minutes"]),
+                    "segment_uncertainty": 0.5,
+                    "segment_reliability_score": 0.9,
+                    "predicted_eta_lower_minutes": max(0.01, predicted_actual - 0.5),
+                    "predicted_eta_upper_minutes": predicted_actual + 0.5,
                 }
             )
         return predictions
@@ -42,6 +46,68 @@ class StubGraphService:
 
     def get_graph(self) -> StaticTransitGraph:
         return self.graph
+
+
+class StubRealtimeWaitService:
+    def __init__(
+        self,
+        *,
+        scheduled_headway_minutes: float | None = None,
+        recent_arrival_gap_minutes: float = 0.0,
+        headway_irregularity_score_live: float = 0.0,
+        bunching_indicator: float = 0.0,
+        rolling_route_delay_minutes: float = 0.0,
+    ):
+        self.scheduled_headway_minutes = scheduled_headway_minutes
+        self.recent_arrival_gap_minutes = recent_arrival_gap_minutes
+        self.headway_irregularity_score_live = headway_irregularity_score_live
+        self.bunching_indicator = bunching_indicator
+        self.rolling_route_delay_minutes = rolling_route_delay_minutes
+
+    def get_segment_live_context(self, *args, **kwargs):
+        return None
+
+    def get_stop_live_context(self, *args, **kwargs):
+        return type(
+            "StopContext",
+            (),
+            {
+                "recent_arrival_gap_minutes": self.recent_arrival_gap_minutes,
+                "headway_irregularity_score_live": self.headway_irregularity_score_live,
+                "bunching_indicator": self.bunching_indicator,
+                "last_update_timestamp": kwargs.get("reference_timestamp", 0),
+            },
+        )()
+
+    def get_route_live_context(self, *args, **kwargs):
+        return type(
+            "RouteContext",
+            (),
+            {
+                "rolling_route_delay_minutes": self.rolling_route_delay_minutes,
+                "corridor_slowdown_score_live": 1.0,
+                "bunching_indicator": self.bunching_indicator,
+                "headway_irregularity_score_live": self.headway_irregularity_score_live,
+                "last_update_timestamp": kwargs.get("reference_timestamp", 0),
+            },
+        )()
+
+    def get_scheduled_headway_minutes(self, *args, **kwargs):
+        return self.scheduled_headway_minutes
+
+
+class StubRealtimeSegmentService(StubRealtimeWaitService):
+    def __init__(
+        self,
+        *,
+        segment_contexts: dict[tuple[str, str, str], object],
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.segment_contexts = segment_contexts
+
+    def get_segment_live_context(self, route_id, from_stop_id, to_stop_id, *args, **kwargs):
+        return self.segment_contexts.get((str(route_id), str(from_stop_id), str(to_stop_id)))
 
 
 def build_test_graph() -> StaticTransitGraph:
@@ -83,6 +149,11 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
         self.assertEqual(len(result.segments), 2)
         self.assertAlmostEqual(result.total_predicted_eta_minutes, 8.0)
+        self.assertGreater(result.predicted_eta_upper_minutes, result.total_predicted_eta_minutes)
+        self.assertLess(result.predicted_eta_lower_minutes, result.total_predicted_eta_minutes)
+        self.assertGreater(result.route_reliability_score, 0.0)
+        self.assertGreaterEqual(result.generalized_cost_minutes, result.total_predicted_eta_minutes)
+        self.assertIn("generalized_cost", result.cost_breakdown)
 
     def test_same_origin_and_destination_returns_zero_eta(self) -> None:
         graph_service = StubGraphService(build_test_graph())
@@ -225,6 +296,239 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         self.assertAlmostEqual(result.segments[0]["wait_minutes_before_boarding"], 10.0)
         self.assertAlmostEqual(result.total_predicted_eta_minutes, 14.0)
 
+    def test_service_live_adjusts_wait_for_frequent_route_boarding(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edge = SegmentEdge(
+            "R1",
+            "A",
+            "C",
+            1,
+            1.0,
+            2.0,
+            5.0,
+            (8 * 3600 + 60,),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=(edge,),
+            edges_from_stop={"A": (edge,)},
+        )
+        graph_service = StubGraphService(graph)
+        prediction_service = StubPredictionService({("A", "C"): 4.0})
+        realtime_service = StubRealtimeWaitService(
+            scheduled_headway_minutes=8.0,
+            recent_arrival_gap_minutes=6.0,
+            headway_irregularity_score_live=0.5,
+            bunching_indicator=1.0,
+            rolling_route_delay_minutes=6.0,
+        )
+        service = RouteOptimizationService(
+            graph_service,
+            prediction_service,
+            realtime_enrichment_service=realtime_service,
+        )
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertAlmostEqual(
+            result.segments[0]["scheduled_wait_minutes_before_boarding"],
+            1.0,
+        )
+        self.assertGreater(result.segments[0]["wait_minutes_before_boarding"], 1.0)
+        self.assertLess(result.segments[0]["boarding_feasibility_score"], 1.0)
+        self.assertGreater(result.total_predicted_eta_minutes, 5.0)
+
+    def test_service_preserves_scheduled_wait_without_live_context(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edge = SegmentEdge(
+            "R1",
+            "A",
+            "C",
+            1,
+            1.0,
+            2.0,
+            5.0,
+            (8 * 3600 + 10 * 60,),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=(edge,),
+            edges_from_stop={"A": (edge,)},
+        )
+        graph_service = StubGraphService(graph)
+        prediction_service = StubPredictionService({("A", "C"): 4.0})
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertAlmostEqual(
+            result.segments[0]["scheduled_wait_minutes_before_boarding"],
+            10.0,
+        )
+        self.assertAlmostEqual(result.segments[0]["wait_minutes_before_boarding"], 10.0)
+        self.assertEqual(result.segments[0]["boarding_feasibility_score"], 1.0)
+
+    def test_service_applies_transfer_penalty_to_forced_transfer_path(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 0.5, 1.0, 5.0, (8 * 3600,)),
+            SegmentEdge("R2", "B", "C", 2, 1.0, 1.0, 5.0, (8 * 3600 + 4 * 60,)),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": (edges[0],), "B": (edges[1],)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "B"): 4.0, ("B", "C"): 3.5}
+        )
+        service = RouteOptimizationService(StubGraphService(graph), prediction_service)
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+        self.assertGreater(result.cost_breakdown["transfer_penalty_cost"], 0.0)
+
+    def test_service_penalizes_unstable_corridor_when_eta_is_close(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 1.0, 0.8, 5.0, (8 * 3600,)),
+            SegmentEdge("R1", "B", "C", 2, 1.0, 0.8, 5.0, (8 * 3600 + 3 * 60,)),
+            SegmentEdge("R2", "A", "C", 1, 1.0, 0.8, 5.0, (8 * 3600,)),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": (edges[0], edges[2]), "B": (edges[1],)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "B"): 2.8, ("B", "C"): 2.8, ("A", "C"): 5.2}
+        )
+        segment_contexts = {
+            ("R2", "A", "C"): type(
+                "SegmentContext",
+                (),
+                {
+                    "prev_segment_delay": 0.0,
+                    "rolling_segment_delay_3": 0.0,
+                    "route_delay_minutes_live": 12.0,
+                    "segment_slowdown_index": 1.8,
+                    "corridor_slowdown_score_live": 2.0,
+                    "bunching_indicator": 1.0,
+                    "headway_irregularity_score_live": 0.8,
+                    "stop_recent_arrival_gap_minutes": 8.0,
+                },
+            )(),
+        }
+        realtime_service = StubRealtimeSegmentService(segment_contexts=segment_contexts)
+        service = RouteOptimizationService(
+            StubGraphService(graph),
+            prediction_service,
+            realtime_enrichment_service=realtime_service,
+        )
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+
+    def test_service_penalizes_excessive_detour_like_long_hop(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 1.0, 1.0, 5.0, (8 * 3600,)),
+            SegmentEdge("R1", "B", "C", 2, 1.0, 1.0, 5.0, (8 * 3600 + 3 * 60,)),
+            SegmentEdge("R1", "A", "C", 1, 1.0, 6.0, 5.0, (8 * 3600,)),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": (edges[0], edges[2]), "B": (edges[1],)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "B"): 3.0, ("B", "C"): 3.0, ("A", "C"): 5.2}
+        )
+        service = RouteOptimizationService(StubGraphService(graph), prediction_service)
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+
+    def test_service_prefers_more_reliable_option_when_eta_is_close(self) -> None:
+        class ReliabilityAwarePredictionService:
+            def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
+                predictions = []
+                for record in segment_records:
+                    edge_key = (str(record["from_stop_id"]), str(record["to_stop_id"]))
+                    if edge_key == ("A", "B"):
+                        predictions.append(
+                            {
+                                "predicted_actual_segment_minutes": 4.0,
+                                "predicted_segment_delay_minutes": -1.0,
+                                "segment_uncertainty": 3.5,
+                                "segment_reliability_score": 0.15,
+                                "predicted_eta_lower_minutes": 0.5,
+                                "predicted_eta_upper_minutes": 7.5,
+                            }
+                        )
+                    else:
+                        predictions.append(
+                            {
+                                "predicted_actual_segment_minutes": 5.0,
+                                "predicted_segment_delay_minutes": 0.0,
+                                "segment_uncertainty": 0.4,
+                                "segment_reliability_score": 0.95,
+                                "predicted_eta_lower_minutes": 4.6,
+                                "predicted_eta_upper_minutes": 5.4,
+                            }
+                        )
+                return predictions
+
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 1.0, 1.0, 5.0),
+            SegmentEdge("R2", "A", "C", 1, 1.0, 1.0, 5.0),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": edges},
+        )
+        service = RouteOptimizationService(
+            StubGraphService(graph),
+            ReliabilityAwarePredictionService(),
+        )
+
+        result = service.optimize_route("A", "C", 1742803800)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "C"])
+        self.assertGreaterEqual(result.route_reliability_score, 0.9)
+
 
 class StubRouteOptimizationApiService:
     def optimize_route(
@@ -264,11 +568,59 @@ class StubRouteOptimizationApiService:
                         "normalized_stop_position": 1.0,
                         "distance_to_prev_stop_km": 1.2,
                         "scheduled_segment_minutes": 5.0,
+                        "scheduled_wait_minutes_before_boarding": 0.0,
+                        "wait_minutes_before_boarding": 0.0,
+                        "boarding_feasibility_score": 0.9,
+                        "travel_time_cost": 4.5,
+                        "waiting_time_cost": 0.0,
+                        "transfer_penalty_cost": 0.0,
+                        "uncertainty_penalty_cost": 0.1,
+                        "reliability_penalty_cost": 0.1,
+                        "unstable_corridor_penalty_cost": 0.0,
+                        "detour_penalty_cost": 0.0,
+                        "fragile_transfer_penalty_cost": 0.0,
+                        "generalized_cost": 4.7,
+                        "congestion_proxy_ratio": 1.1,
+                        "congestion_proxy_percent": 10.0,
+                        "corridor_instability_score_live": 0.0,
+                        "service_quality_score": 0.92,
                         "predicted_actual_segment_minutes": 4.5,
                         "predicted_segment_delay_minutes": -0.5,
+                        "segment_uncertainty": 0.6,
+                        "segment_reliability_score": 0.92,
+                        "predicted_eta_lower_minutes": 3.9,
+                        "predicted_eta_upper_minutes": 5.1,
                     }
                 ],
                 "total_predicted_eta_minutes": 4.5,
+                "predicted_eta_lower_minutes": 3.9,
+                "predicted_eta_upper_minutes": 5.1,
+                "route_reliability_score": 0.92,
+                "generalized_cost_minutes": 4.7,
+                "total_wait_minutes": 0.0,
+                "total_in_vehicle_minutes": 4.5,
+                "transfer_count": 0,
+                "fragile_transfer_count": 0,
+                "transfer_fragility_score": 0.0,
+                "congestion_proxy_ratio": 1.1,
+                "congestion_proxy_percent": 10.0,
+                "service_quality_score": 0.92,
+                "selection_reasons": [
+                    "Chosen for the lowest generalized cost balancing ETA, wait time, and risk."
+                ],
+                "explanation_summary": "Chosen for the lowest generalized cost balancing ETA, wait time, and risk.",
+                "cost_breakdown": {
+                    "travel_time_cost": 4.5,
+                    "waiting_time_cost": 0.0,
+                    "transfer_penalty_cost": 0.0,
+                    "uncertainty_penalty_cost": 0.1,
+                    "reliability_penalty_cost": 0.1,
+                    "unstable_corridor_penalty_cost": 0.0,
+                    "detour_penalty_cost": 0.0,
+                    "fragile_transfer_penalty_cost": 0.0,
+                    "generalized_cost": 4.7,
+                },
+                "alternatives": [],
             },
         )()
 
@@ -312,6 +664,12 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(response.stops), 2)
         self.assertEqual(len(response.segments), 1)
         self.assertEqual(response.total_predicted_eta_minutes, 4.5)
+        self.assertEqual(response.route_reliability_score, 0.92)
+        self.assertEqual(response.total_wait_minutes, 0.0)
+        self.assertEqual(response.transfer_count, 0)
+        self.assertTrue(response.selection_reasons)
+        self.assertIn("generalized cost", response.explanation_summary.lower())
+        self.assertEqual(response.generalized_cost_minutes, 4.7)
 
     async def test_unknown_stop_returns_404(self) -> None:
         with patch(
@@ -391,6 +749,8 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("total_predicted_eta_minutes", response.json())
+        self.assertIn("selection_reasons", response.json())
+        self.assertIn("cost_breakdown", response.json())
 
 
 if __name__ == "__main__":

@@ -324,8 +324,60 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(context.route_id, "R1")
         self.assertEqual(context.from_stop_id, "STOP_B")
         self.assertEqual(context.to_stop_id, "STOP_C")
+        self.assertEqual(context.scheduled_segment_minutes, 5.0)
         self.assertEqual(context.prev_segment_delay, 0.0)
         self.assertNotEqual(context.rolling_segment_delay_3, 0.0)
+        self.assertGreater(context.route_delay_minutes_live, 0.0)
+        self.assertGreater(context.segment_slowdown_index, 1.0)
+        self.assertGreater(context.corridor_slowdown_score_live, 1.0)
+        self.assertGreaterEqual(context.corridor_instability_score_live, 0.0)
+        self.assertLessEqual(context.service_quality_score, 1.0)
+
+    def test_route_and_stop_live_context_capture_headway_proxies(self) -> None:
+        stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
+        snapshots = [
+            make_snapshot(
+                vehicle_id="V1",
+                trip_id="TRIP_1",
+                latitude=28.705,
+                longitude=77.105,
+                gps_timestamp=stop_b_arrival + 60,
+                snapshot_time=stop_b_arrival + 65,
+            ),
+            make_snapshot(
+                vehicle_id="V2",
+                trip_id="TRIP_1",
+                latitude=28.706,
+                longitude=77.106,
+                gps_timestamp=stop_b_arrival + 4 * 60,
+                snapshot_time=stop_b_arrival + 4 * 60 + 5,
+            ),
+        ]
+        service = RealtimeEnrichmentService(
+            gtfs_static_dir=self.gtfs_dir,
+            ingestion_service=FakeIngestionService(snapshots),
+        )
+
+        service.refresh_vehicle_positions()
+        route_context = service.get_route_live_context(
+            "R1",
+            reference_timestamp=stop_b_arrival + 4 * 60 + 20,
+        )
+        stop_context = service.get_stop_live_context(
+            "R1",
+            "STOP_C",
+            reference_timestamp=stop_b_arrival + 4 * 60 + 20,
+        )
+
+        assert route_context is not None
+        assert stop_context is not None
+        self.assertGreater(stop_context.recent_arrival_gap_minutes, 0.0)
+        self.assertGreater(stop_context.headway_irregularity_score_live, 0.0)
+        self.assertEqual(stop_context.bunching_indicator, 1.0)
+        self.assertGreaterEqual(route_context.corridor_slowdown_score_live, 1.0)
+        self.assertGreater(route_context.headway_irregularity_score_live, 0.0)
+        self.assertGreaterEqual(route_context.corridor_instability_score_live, 0.0)
+        self.assertGreater(route_context.service_quality_score, 0.0)
 
     def test_latest_vehicle_on_same_segment_wins(self) -> None:
         trip_1_stop_b_arrival = scheduled_unix_from_service_date(
@@ -495,6 +547,15 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertGreater(
             prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0
         )
+        self.assertGreater(
+            prediction_service.last_records[0]["route_delay_minutes_live"], 0.0
+        )
+        self.assertGreater(
+            prediction_service.last_records[0]["segment_slowdown_index"], 1.0
+        )
+        self.assertGreater(
+            prediction_service.last_records[0]["corridor_slowdown_score_live"], 1.0
+        )
 
     def test_routing_uses_static_route_id_for_live_context_lookup(self) -> None:
         trip_1_stop_c_arrival = scheduled_unix_from_service_date(
@@ -549,6 +610,15 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(
             prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0
         )
+        self.assertEqual(
+            prediction_service.last_records[0]["route_delay_minutes_live"], 0.0
+        )
+        self.assertEqual(
+            prediction_service.last_records[0]["segment_slowdown_index"], 1.0
+        )
+        self.assertEqual(
+            prediction_service.last_records[0]["corridor_slowdown_score_live"], 1.0
+        )
 
     def test_stale_live_context_falls_back_to_zero(self) -> None:
         trip_1_stop_b_arrival = scheduled_unix_from_service_date(
@@ -581,6 +651,15 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         self.assertEqual(prediction_service.last_records[0]["prev_segment_delay"], 0.0)
         self.assertEqual(
             prediction_service.last_records[0]["rolling_segment_delay_3"], 0.0
+        )
+        self.assertEqual(
+            prediction_service.last_records[0]["route_delay_minutes_live"], 0.0
+        )
+        self.assertEqual(
+            prediction_service.last_records[0]["segment_slowdown_index"], 1.0
+        )
+        self.assertEqual(
+            prediction_service.last_records[0]["corridor_slowdown_score_live"], 1.0
         )
         self.assertFalse(realtime_service.get_status()["cache_is_fresh"])
 

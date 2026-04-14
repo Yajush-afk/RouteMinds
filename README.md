@@ -33,6 +33,10 @@ What is working today:
 - GTFS static graph construction from stops, trips, routes, and stop times
 - Dijkstra-based route optimization over predicted segment travel times
 - GTFS-RT vehicle-position ingestion with live segment delay enrichment support
+- live corridor instability, bunching, and headway irregularity proxies from GTFS-RT
+- wait-aware and reliability-aware route scoring with ETA ranges
+- generalized route cost scoring with transfer, uncertainty, reliability, and detour penalties
+- route explanations, congestion-proxy outputs, and service-quality indicators in route responses
 - backend test coverage for training, prediction, routing, GTFS graph logic, and real-time enrichment
 
 What is not complete yet:
@@ -118,8 +122,8 @@ The backend service layer currently includes:
 
 - `PredictionService`: loads the trained model and predicts segment travel times
 - `GTFSGraphService`: builds a directed transit graph from GTFS static files
-- `RouteOptimizationService`: scores route segments and computes best paths
-- `RealtimeEnrichmentService`: fetches GTFS-RT vehicle positions and infers live segment delay context
+- `RouteOptimizationService`: scores route segments and computes best paths using generalized route cost
+- `RealtimeEnrichmentService`: fetches GTFS-RT vehicle positions and infers live delay, slowdown, bunching, and service-quality context
 
 ### Machine Learning
 
@@ -136,6 +140,14 @@ High-level training flow:
 7. Save model artifacts, schema metadata, metrics, and config snapshot
 
 This model is used by the backend to estimate segment travel cost during route optimization.
+
+Current prototype routing layers on top of the model now also expose:
+
+- segment uncertainty and route reliability scores
+- ETA ranges instead of a single point estimate only
+- slowdown-based congestion proxies instead of unsupported direct traffic density claims
+- transfer fragility and missed-transfer risk signals
+- service-quality and corridor-instability indicators derived from GTFS-RT
 
 ## API Endpoints
 
@@ -210,6 +222,21 @@ The route optimization endpoint expects:
 - `destination_stop_id`
 - `query_timestamp_unix`
 
+### Route Optimization Response Highlights
+
+The route optimization response now exposes prototype-ready explanation and risk fields,
+including:
+
+- total predicted ETA
+- ETA lower and upper range
+- route reliability score
+- generalized route cost and cost breakdown
+- total wait and in-vehicle time
+- congestion proxy ratio and slowdown percentage
+- transfer count, fragile transfer count, and transfer fragility score
+- segment-level transfer, reliability, and penalty details
+- human-readable route selection reasons
+
 ## Data and Artifacts
 
 The project currently relies on local files rather than a database.
@@ -228,6 +255,7 @@ Important outputs:
 - trained model in `artifacts/models/`
 - feature schema in `artifacts/models/`
 - metrics and config snapshots in `artifacts/metrics/`
+- realtime canonicalization and hybrid reconstruction reports in `artifacts/metrics/`
 
 These folders are intended to hold generated and local data assets and are largely excluded from git.
 
