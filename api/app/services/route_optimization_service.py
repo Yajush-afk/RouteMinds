@@ -20,6 +20,11 @@ MAX_UNCERTAINTY_PENALTY_MINUTES = 2.5
 MAX_RELIABILITY_PENALTY_MINUTES = 2.0
 MAX_UNSTABLE_CORRIDOR_PENALTY_MINUTES = 2.5
 MAX_DETOUR_PENALTY_MINUTES = 1.5
+MAX_FRAGILE_TRANSFER_PENALTY_MINUTES = 3.0
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +36,19 @@ class CostBreakdown:
     reliability_penalty_cost: float
     unstable_corridor_penalty_cost: float
     detour_penalty_cost: float
+    fragile_transfer_penalty_cost: float
     generalized_cost: float
+
+
+@dataclass(frozen=True, slots=True)
+class TransferAssessment:
+    is_transfer: bool
+    transfer_buffer_minutes: float
+    transfer_slack_minutes: float
+    transfer_wait_uncertainty_minutes: float
+    missed_transfer_risk: float
+    is_fragile_transfer: bool
+    fragile_transfer_penalty_cost: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +61,17 @@ class RouteOptimizationResult:
     route_reliability_score: float
     generalized_cost_minutes: float
     cost_breakdown: dict[str, float]
+    total_wait_minutes: float
+    total_in_vehicle_minutes: float
+    transfer_count: int
+    fragile_transfer_count: int
+    transfer_fragility_score: float
+    congestion_proxy_ratio: float
+    congestion_proxy_percent: float
+    service_quality_score: float
+    selection_reasons: list[str]
+    explanation_summary: str
+    alternatives: list[dict[str, str | float]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +89,7 @@ class RouteStep:
     scheduled_wait_minutes_before_boarding: float
     wait_minutes_before_boarding: float
     boarding_feasibility_score: float
+    transfer_assessment: TransferAssessment
     cost_breakdown: CostBreakdown
 
 
@@ -115,8 +144,20 @@ class RouteOptimizationService:
                     "reliability_penalty_cost": 0.0,
                     "unstable_corridor_penalty_cost": 0.0,
                     "detour_penalty_cost": 0.0,
+                    "fragile_transfer_penalty_cost": 0.0,
                     "generalized_cost": 0.0,
                 },
+                total_wait_minutes=0.0,
+                total_in_vehicle_minutes=0.0,
+                transfer_count=0,
+                fragile_transfer_count=0,
+                transfer_fragility_score=0.0,
+                congestion_proxy_ratio=1.0,
+                congestion_proxy_percent=0.0,
+                service_quality_score=1.0,
+                selection_reasons=["Origin and destination are the same stop."],
+                explanation_summary="No travel is required for this query.",
+                alternatives=[],
             )
 
         (
@@ -149,6 +190,17 @@ class RouteOptimizationService:
             route_reliability_score=route_summary["route_reliability_score"],
             generalized_cost_minutes=float(generalized_costs[best_destination_state]),
             cost_breakdown=route_summary["cost_breakdown"],
+            total_wait_minutes=route_summary["total_wait_minutes"],
+            total_in_vehicle_minutes=route_summary["total_in_vehicle_minutes"],
+            transfer_count=route_summary["transfer_count"],
+            fragile_transfer_count=route_summary["fragile_transfer_count"],
+            transfer_fragility_score=route_summary["transfer_fragility_score"],
+            congestion_proxy_ratio=route_summary["congestion_proxy_ratio"],
+            congestion_proxy_percent=route_summary["congestion_proxy_percent"],
+            service_quality_score=route_summary["service_quality_score"],
+            selection_reasons=route_summary["selection_reasons"],
+            explanation_summary=route_summary["explanation_summary"],
+            alternatives=[],
         )
 
     def _run_dijkstra(
@@ -230,6 +282,13 @@ class RouteOptimizationService:
                     prediction=prediction,
                     boarding_feasibility_score=boarding_feasibility_score,
                 )
+                transfer_assessment = self._transfer_assessment(
+                    edge=edge,
+                    current_state=current_state,
+                    prediction=prediction,
+                    scheduled_wait_minutes=scheduled_wait_minutes_before_boarding,
+                    boarding_feasibility_score=boarding_feasibility_score,
+                )
                 cost_breakdown = self._generalized_cost_breakdown(
                     edge=edge,
                     current_state=current_state,
@@ -238,6 +297,7 @@ class RouteOptimizationService:
                     wait_minutes=wait_minutes_before_boarding,
                     reliability_penalty_minutes=reliability_penalty_minutes,
                     boarding_feasibility_score=boarding_feasibility_score,
+                    transfer_assessment=transfer_assessment,
                 )
                 candidate_eta = (
                     etas[current_state] + wait_minutes_before_boarding + edge_weight
@@ -263,6 +323,7 @@ class RouteOptimizationService:
                         ),
                         wait_minutes_before_boarding=wait_minutes_before_boarding,
                         boarding_feasibility_score=boarding_feasibility_score,
+                        transfer_assessment=transfer_assessment,
                         cost_breakdown=cost_breakdown,
                     )
                     heapq.heappush(
@@ -349,6 +410,9 @@ class RouteOptimizationService:
         route_delay_minutes_live = 0.0
         segment_slowdown_index = 1.0
         corridor_slowdown_score_live = 1.0
+        corridor_instability_score_live = 0.0
+        service_quality_score = 1.0
+        persistent_unreliability_penalty = 0.0
         bunching_indicator = 0.0
         headway_irregularity_score_live = 0.0
         stop_recent_arrival_gap_minutes = 0.0
@@ -373,6 +437,13 @@ class RouteOptimizationService:
                 stop_recent_arrival_gap_minutes = (
                     live_context.stop_recent_arrival_gap_minutes
                 )
+                corridor_instability_score_live = (
+                    live_context.corridor_instability_score_live
+                )
+                service_quality_score = live_context.service_quality_score
+                persistent_unreliability_penalty = (
+                    live_context.persistent_unreliability_penalty
+                )
 
         return {
             "route_id": edge.route_id,
@@ -388,6 +459,9 @@ class RouteOptimizationService:
             "route_delay_minutes_live": route_delay_minutes_live,
             "segment_slowdown_index": segment_slowdown_index,
             "corridor_slowdown_score_live": corridor_slowdown_score_live,
+            "corridor_instability_score_live": corridor_instability_score_live,
+            "service_quality_score": service_quality_score,
+            "persistent_unreliability_penalty": persistent_unreliability_penalty,
             "bunching_indicator": bunching_indicator,
             "headway_irregularity_score_live": headway_irregularity_score_live,
             "stop_recent_arrival_gap_minutes": stop_recent_arrival_gap_minutes,
@@ -403,6 +477,7 @@ class RouteOptimizationService:
         wait_minutes: float,
         reliability_penalty_minutes: float,
         boarding_feasibility_score: float,
+        transfer_assessment: TransferAssessment,
     ) -> CostBreakdown:
         transfer_penalty_cost = self._transfer_penalty_cost(
             current_route_id=current_state.active_route_id,
@@ -413,6 +488,7 @@ class RouteOptimizationService:
             prediction=prediction,
         )
         detour_penalty_cost = self._detour_penalty_minutes(edge=edge)
+        fragile_transfer_penalty_cost = transfer_assessment.fragile_transfer_penalty_cost
         generalized_cost = (
             travel_time_minutes
             + wait_minutes
@@ -421,6 +497,7 @@ class RouteOptimizationService:
             + reliability_penalty_minutes
             + unstable_corridor_penalty_cost
             + detour_penalty_cost
+            + fragile_transfer_penalty_cost
         )
         return CostBreakdown(
             travel_time_cost=travel_time_minutes,
@@ -430,7 +507,66 @@ class RouteOptimizationService:
             reliability_penalty_cost=reliability_penalty_minutes,
             unstable_corridor_penalty_cost=unstable_corridor_penalty_cost,
             detour_penalty_cost=detour_penalty_cost,
+            fragile_transfer_penalty_cost=fragile_transfer_penalty_cost,
             generalized_cost=generalized_cost,
+        )
+
+    def _transfer_assessment(
+        self,
+        *,
+        edge: SegmentEdge,
+        current_state: RouteState,
+        prediction: dict[str, float],
+        scheduled_wait_minutes: float,
+        boarding_feasibility_score: float,
+    ) -> TransferAssessment:
+        transfer_buffer_minutes = self._transfer_buffer_minutes(
+            current_route_id=current_state.active_route_id,
+            next_route_id=edge.route_id,
+        )
+        is_transfer = transfer_buffer_minutes > 0.0
+        transfer_slack_minutes = max(0.0, scheduled_wait_minutes - transfer_buffer_minutes)
+        transfer_wait_uncertainty_minutes = min(
+            4.0,
+            max(0.0, float(prediction.get("segment_uncertainty", 0.0))) * 0.35
+            + max(0.0, float(prediction.get("headway_irregularity_score_live", 0.0))) * 1.4
+            + max(0.0, float(prediction.get("bunching_indicator", 0.0))) * 0.75,
+        )
+        if not is_transfer:
+            return TransferAssessment(
+                is_transfer=False,
+                transfer_buffer_minutes=0.0,
+                transfer_slack_minutes=0.0,
+                transfer_wait_uncertainty_minutes=0.0,
+                missed_transfer_risk=0.0,
+                is_fragile_transfer=False,
+                fragile_transfer_penalty_cost=0.0,
+            )
+
+        slack_pressure = max(0.0, 2.5 - transfer_slack_minutes) / 2.5
+        instability_pressure = 1.0 - max(0.05, min(1.0, boarding_feasibility_score))
+        missed_transfer_risk = _clamp(
+            slack_pressure * 0.45
+            + instability_pressure * 0.35
+            + min(1.0, transfer_wait_uncertainty_minutes / 4.0) * 0.2,
+            0.0,
+            0.99,
+        )
+        fragile_transfer_penalty_cost = min(
+            MAX_FRAGILE_TRANSFER_PENALTY_MINUTES,
+            max(0.0, 2.0 - transfer_slack_minutes) * 0.8
+            + missed_transfer_risk * 1.6
+            + transfer_wait_uncertainty_minutes * 0.25,
+        )
+        is_fragile_transfer = transfer_slack_minutes < 2.0 or missed_transfer_risk >= 0.45
+        return TransferAssessment(
+            is_transfer=True,
+            transfer_buffer_minutes=transfer_buffer_minutes,
+            transfer_slack_minutes=transfer_slack_minutes,
+            transfer_wait_uncertainty_minutes=transfer_wait_uncertainty_minutes,
+            missed_transfer_risk=missed_transfer_risk,
+            is_fragile_transfer=is_fragile_transfer,
+            fragile_transfer_penalty_cost=fragile_transfer_penalty_cost,
         )
 
     def _estimate_wait_and_boarding(
@@ -550,6 +686,14 @@ class RouteOptimizationService:
             0.0,
             float(prediction.get("corridor_slowdown_score_live", 1.0)) - 1.0,
         )
+        corridor_instability = max(
+            0.0,
+            float(prediction.get("corridor_instability_score_live", 0.0)),
+        )
+        persistent_unreliability_penalty = max(
+            0.0,
+            float(prediction.get("persistent_unreliability_penalty", 0.0)),
+        )
         segment_slowdown = max(
             0.0,
             float(prediction.get("segment_slowdown_index", 1.0)) - 1.0,
@@ -562,6 +706,8 @@ class RouteOptimizationService:
         route_delay = max(0.0, float(prediction.get("route_delay_minutes_live", 0.0)))
         penalty = 0.0
         penalty += min(1.0, corridor_slowdown * 1.1)
+        penalty += min(0.7, corridor_instability * 0.9)
+        penalty += min(0.6, persistent_unreliability_penalty * 0.5)
         penalty += min(0.8, segment_slowdown * 0.8)
         penalty += min(0.4, headway_irregularity * 0.5)
         penalty += min(0.2, bunching_indicator * 0.2)
@@ -626,6 +772,12 @@ class RouteOptimizationService:
                 "scheduled_wait_minutes_before_boarding": step.scheduled_wait_minutes_before_boarding,
                 "wait_minutes_before_boarding": step.wait_minutes_before_boarding,
                 "boarding_feasibility_score": step.boarding_feasibility_score,
+                "is_transfer": step.transfer_assessment.is_transfer,
+                "transfer_buffer_minutes": step.transfer_assessment.transfer_buffer_minutes,
+                "transfer_slack_minutes": step.transfer_assessment.transfer_slack_minutes,
+                "transfer_wait_uncertainty_minutes": step.transfer_assessment.transfer_wait_uncertainty_minutes,
+                "missed_transfer_risk": step.transfer_assessment.missed_transfer_risk,
+                "is_fragile_transfer": step.transfer_assessment.is_fragile_transfer,
                 "travel_time_cost": step.cost_breakdown.travel_time_cost,
                 "waiting_time_cost": step.cost_breakdown.waiting_time_cost,
                 "transfer_penalty_cost": step.cost_breakdown.transfer_penalty_cost,
@@ -633,7 +785,20 @@ class RouteOptimizationService:
                 "reliability_penalty_cost": step.cost_breakdown.reliability_penalty_cost,
                 "unstable_corridor_penalty_cost": step.cost_breakdown.unstable_corridor_penalty_cost,
                 "detour_penalty_cost": step.cost_breakdown.detour_penalty_cost,
+                "fragile_transfer_penalty_cost": step.cost_breakdown.fragile_transfer_penalty_cost,
                 "generalized_cost": step.cost_breakdown.generalized_cost,
+                "congestion_proxy_ratio": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("congestion_proxy_ratio", 1.0),
+                "congestion_proxy_percent": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("congestion_proxy_percent", 0.0),
+                "corridor_instability_score_live": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("corridor_instability_score_live", 0.0),
+                "service_quality_score": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("service_quality_score", 1.0),
                 "predicted_actual_segment_minutes": edge_prediction_cache[
                     (step.edge, step.scheduled_departure_unix)
                 ][
@@ -670,6 +835,33 @@ class RouteOptimizationService:
             for step in route_steps
         ]
 
+    def _selection_reasons(
+        self,
+        *,
+        total_wait_minutes: float,
+        route_reliability_score: float,
+        transfer_count: int,
+        fragile_transfer_count: int,
+        congestion_proxy_ratio: float,
+        service_quality_score: float,
+    ) -> list[str]:
+        reasons: list[str] = [
+            "Chosen for the lowest generalized cost balancing ETA, wait time, and risk.",
+        ]
+        if total_wait_minutes <= 5.0:
+            reasons.append("Low expected boarding and transfer wait time.")
+        if route_reliability_score >= 0.8:
+            reasons.append("High route reliability under current live conditions.")
+        if transfer_count == 0:
+            reasons.append("No route transfers required.")
+        elif fragile_transfer_count == 0:
+            reasons.append("Transfers are buffered and not considered fragile.")
+        if congestion_proxy_ratio <= 1.1:
+            reasons.append("Corridor slowdown is close to typical conditions.")
+        if service_quality_score >= 0.75:
+            reasons.append("Current route service quality is stable.")
+        return reasons[:4]
+
     def _build_route_summary(
         self,
         segments: list[dict[str, str | int | float]],
@@ -679,6 +871,16 @@ class RouteOptimizationService:
                 "predicted_eta_lower_minutes": 0.0,
                 "predicted_eta_upper_minutes": 0.0,
                 "route_reliability_score": 1.0,
+                "total_wait_minutes": 0.0,
+                "total_in_vehicle_minutes": 0.0,
+                "transfer_count": 0,
+                "fragile_transfer_count": 0,
+                "transfer_fragility_score": 0.0,
+                "congestion_proxy_ratio": 1.0,
+                "congestion_proxy_percent": 0.0,
+                "service_quality_score": 1.0,
+                "selection_reasons": ["No travel is required for this query."],
+                "explanation_summary": "No travel is required for this query.",
                 "cost_breakdown": {
                     "travel_time_cost": 0.0,
                     "waiting_time_cost": 0.0,
@@ -687,11 +889,13 @@ class RouteOptimizationService:
                     "reliability_penalty_cost": 0.0,
                     "unstable_corridor_penalty_cost": 0.0,
                     "detour_penalty_cost": 0.0,
+                    "fragile_transfer_penalty_cost": 0.0,
                     "generalized_cost": 0.0,
                 },
             }
 
         total_wait = sum(float(segment["wait_minutes_before_boarding"]) for segment in segments)
+        total_in_vehicle = sum(float(segment["predicted_actual_segment_minutes"]) for segment in segments)
         total_lower = total_wait + sum(
             float(segment["predicted_eta_lower_minutes"]) for segment in segments
         )
@@ -700,6 +904,12 @@ class RouteOptimizationService:
         )
         reliability_weight_sum = 0.0
         weighted_reliability = 0.0
+        congestion_weight_sum = 0.0
+        weighted_congestion_ratio = 0.0
+        weighted_service_quality = 0.0
+        transfer_count = 0
+        fragile_transfer_count = 0
+        transfer_fragility_sum = 0.0
         cost_breakdown = {
             "travel_time_cost": 0.0,
             "waiting_time_cost": 0.0,
@@ -708,6 +918,7 @@ class RouteOptimizationService:
             "reliability_penalty_cost": 0.0,
             "unstable_corridor_penalty_cost": 0.0,
             "detour_penalty_cost": 0.0,
+            "fragile_transfer_penalty_cost": 0.0,
             "generalized_cost": 0.0,
         }
         for segment in segments:
@@ -723,6 +934,14 @@ class RouteOptimizationService:
             )
             reliability_weight_sum += segment_weight
             weighted_reliability += combined_reliability * segment_weight
+            congestion_weight_sum += segment_weight
+            weighted_congestion_ratio += float(segment.get("congestion_proxy_ratio", 1.0)) * segment_weight
+            weighted_service_quality += float(segment.get("service_quality_score", 1.0)) * segment_weight
+            if bool(segment.get("is_transfer", False)):
+                transfer_count += 1
+                transfer_fragility_sum += float(segment.get("missed_transfer_risk", 0.0))
+                if bool(segment.get("is_fragile_transfer", False)):
+                    fragile_transfer_count += 1
             for key in cost_breakdown:
                 cost_breakdown[key] += float(segment.get(key, 0.0))
 
@@ -731,9 +950,40 @@ class RouteOptimizationService:
             if reliability_weight_sum > 0.0
             else 1.0
         )
+        congestion_proxy_ratio = (
+            weighted_congestion_ratio / congestion_weight_sum
+            if congestion_weight_sum > 0.0
+            else 1.0
+        )
+        service_quality_score = (
+            weighted_service_quality / congestion_weight_sum
+            if congestion_weight_sum > 0.0
+            else 1.0
+        )
+        transfer_fragility_score = (
+            transfer_fragility_sum / transfer_count if transfer_count > 0 else 0.0
+        )
+        selection_reasons = self._selection_reasons(
+            total_wait_minutes=total_wait,
+            route_reliability_score=route_reliability_score,
+            transfer_count=transfer_count,
+            fragile_transfer_count=fragile_transfer_count,
+            congestion_proxy_ratio=congestion_proxy_ratio,
+            service_quality_score=service_quality_score,
+        )
         return {
             "predicted_eta_lower_minutes": max(0.0, total_lower),
             "predicted_eta_upper_minutes": max(total_lower, total_upper),
             "route_reliability_score": max(0.05, min(0.99, route_reliability_score)),
+            "total_wait_minutes": max(0.0, total_wait),
+            "total_in_vehicle_minutes": max(0.0, total_in_vehicle),
+            "transfer_count": transfer_count,
+            "fragile_transfer_count": fragile_transfer_count,
+            "transfer_fragility_score": _clamp(transfer_fragility_score, 0.0, 0.99),
+            "congestion_proxy_ratio": max(0.0, congestion_proxy_ratio),
+            "congestion_proxy_percent": (congestion_proxy_ratio - 1.0) * 100.0,
+            "service_quality_score": _clamp(service_quality_score, 0.05, 1.0),
+            "selection_reasons": selection_reasons,
+            "explanation_summary": selection_reasons[0],
             "cost_breakdown": cost_breakdown,
         }
