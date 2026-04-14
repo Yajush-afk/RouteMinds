@@ -1,9 +1,9 @@
-import { FaqSection } from "@/components/landing/FaqSection";
-import { FeaturesSection } from "@/components/landing/FeaturesSection";
-import { HeroSection } from "@/components/landing/HeroSection";
-import { LandingFooter } from "@/components/landing/LandingFooter";
-import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { WhyDelhiSection } from "@/components/landing/WhyDelhiSection";
+import { FaqSection } from "@/components/landing/FAQSection"
+import { FeaturesSection } from "@/components/landing/FeaturesSection"
+import { HeroSection } from "@/components/landing/HeroSection"
+import { LandingFooter } from "@/components/landing/LandingFooter"
+import { LandingNavbar } from "@/components/landing/LandingNavbar"
+import { WhyDelhiSection } from "@/components/landing/WhyDelhiSection"
 
 export function LandingPage() {
   return (
@@ -15,7 +15,7 @@ export function LandingPage() {
       <FaqSection />
       <LandingFooter />
     </>
-  );
+  )
 }
 
-export default LandingPage;
+export default LandingPage

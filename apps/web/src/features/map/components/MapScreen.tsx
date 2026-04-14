@@ -1,9 +1,12 @@
-import { MonitorSmartphone } from "lucide-react"
+import { LoaderCircle, MonitorSmartphone } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 
 import MapViewport from "@/features/map/components/MapViewport"
 import MapSearchPanel from "@/features/map/components/search/MapSearchPanel"
 import { useMapScreenState } from "@/features/map/hooks/useMapScreenState"
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile"
+
+const MAP_SPINNER_DELAY_MS = 400
 
 function MapScreen() {
   const isMobile = useIsMobile()
@@ -34,11 +37,44 @@ function MapScreen() {
 
 function DesktopMapScreen() {
   const { mapViewportProps, searchPanelProps } = useMapScreenState()
+  const [isMapReady, setIsMapReady] = useState(false)
+  const [shouldShowSpinner, setShouldShowSpinner] = useState(false)
+  const delayTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    delayTimeoutRef.current = window.setTimeout(() => {
+      setShouldShowSpinner(true)
+    }, MAP_SPINNER_DELAY_MS)
+
+    return () => {
+      if (delayTimeoutRef.current !== null) {
+        window.clearTimeout(delayTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  function handleMapReady() {
+    setIsMapReady(true)
+    setShouldShowSpinner(false)
+
+    if (delayTimeoutRef.current !== null) {
+      window.clearTimeout(delayTimeoutRef.current)
+      delayTimeoutRef.current = null
+    }
+  }
 
   return (
     <section className="relative h-screen w-full">
-      <MapViewport {...mapViewportProps} />
+      <MapViewport {...mapViewportProps} onMapReady={handleMapReady} />
       <MapSearchPanel {...searchPanelProps} />
+      {shouldShowSpinner && !isMapReady ? (
+        <div className="absolute inset-0 z-950 grid place-items-center bg-background/72 backdrop-blur-[2px]">
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card/92 px-6 py-5 text-card-foreground shadow-lg ring-1 ring-border/60">
+            <LoaderCircle className="size-6 animate-spin text-sky-600" />
+            <p className="text-sm font-medium">Loading map</p>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
