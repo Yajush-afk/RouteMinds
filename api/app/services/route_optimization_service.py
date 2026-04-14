@@ -437,12 +437,20 @@ class RouteOptimizationService:
                 stop_recent_arrival_gap_minutes = (
                     live_context.stop_recent_arrival_gap_minutes
                 )
-                corridor_instability_score_live = (
-                    live_context.corridor_instability_score_live
+                corridor_instability_score_live = getattr(
+                    live_context,
+                    "corridor_instability_score_live",
+                    0.0,
                 )
-                service_quality_score = live_context.service_quality_score
-                persistent_unreliability_penalty = (
-                    live_context.persistent_unreliability_penalty
+                service_quality_score = getattr(
+                    live_context,
+                    "service_quality_score",
+                    1.0,
+                )
+                persistent_unreliability_penalty = getattr(
+                    live_context,
+                    "persistent_unreliability_penalty",
+                    0.0,
                 )
 
         return {

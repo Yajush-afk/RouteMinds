@@ -49,6 +49,8 @@ class PredictionServiceTests(unittest.TestCase):
                     "predicted_segment_delay_minutes": 9.1,
                     "segment_uncertainty": predictions[0]["segment_uncertainty"],
                     "segment_reliability_score": predictions[0]["segment_reliability_score"],
+                    "congestion_proxy_ratio": predictions[0]["congestion_proxy_ratio"],
+                    "congestion_proxy_percent": predictions[0]["congestion_proxy_percent"],
                     "predicted_eta_lower_minutes": predictions[0]["predicted_eta_lower_minutes"],
                     "predicted_eta_upper_minutes": predictions[0]["predicted_eta_upper_minutes"],
                 },
@@ -57,6 +59,8 @@ class PredictionServiceTests(unittest.TestCase):
                     "predicted_segment_delay_minutes": 6.6,
                     "segment_uncertainty": predictions[1]["segment_uncertainty"],
                     "segment_reliability_score": predictions[1]["segment_reliability_score"],
+                    "congestion_proxy_ratio": predictions[1]["congestion_proxy_ratio"],
+                    "congestion_proxy_percent": predictions[1]["congestion_proxy_percent"],
                     "predicted_eta_lower_minutes": predictions[1]["predicted_eta_lower_minutes"],
                     "predicted_eta_upper_minutes": predictions[1]["predicted_eta_upper_minutes"],
                 },
@@ -73,6 +77,7 @@ class PredictionServiceTests(unittest.TestCase):
             predictions[0]["predicted_eta_upper_minutes"],
             predictions[0]["predicted_actual_segment_minutes"],
         )
+        self.assertGreater(predictions[0]["congestion_proxy_ratio"], 1.0)
 
 
 class PredictionApiTests(unittest.IsolatedAsyncioTestCase):
@@ -102,6 +107,8 @@ class PredictionApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("predicted_segment_delay_minutes", payload["predictions"][0])
         self.assertIn("segment_uncertainty", payload["predictions"][0])
         self.assertIn("segment_reliability_score", payload["predictions"][0])
+        self.assertIn("congestion_proxy_ratio", payload["predictions"][0])
+        self.assertIn("congestion_proxy_percent", payload["predictions"][0])
         self.assertIn("predicted_eta_lower_minutes", payload["predictions"][0])
         self.assertIn("predicted_eta_upper_minutes", payload["predictions"][0])
 

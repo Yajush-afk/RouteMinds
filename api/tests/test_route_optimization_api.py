@@ -578,7 +578,12 @@ class StubRouteOptimizationApiService:
                         "reliability_penalty_cost": 0.1,
                         "unstable_corridor_penalty_cost": 0.0,
                         "detour_penalty_cost": 0.0,
+                        "fragile_transfer_penalty_cost": 0.0,
                         "generalized_cost": 4.7,
+                        "congestion_proxy_ratio": 1.1,
+                        "congestion_proxy_percent": 10.0,
+                        "corridor_instability_score_live": 0.0,
+                        "service_quality_score": 0.92,
                         "predicted_actual_segment_minutes": 4.5,
                         "predicted_segment_delay_minutes": -0.5,
                         "segment_uncertainty": 0.6,
@@ -592,6 +597,18 @@ class StubRouteOptimizationApiService:
                 "predicted_eta_upper_minutes": 5.1,
                 "route_reliability_score": 0.92,
                 "generalized_cost_minutes": 4.7,
+                "total_wait_minutes": 0.0,
+                "total_in_vehicle_minutes": 4.5,
+                "transfer_count": 0,
+                "fragile_transfer_count": 0,
+                "transfer_fragility_score": 0.0,
+                "congestion_proxy_ratio": 1.1,
+                "congestion_proxy_percent": 10.0,
+                "service_quality_score": 0.92,
+                "selection_reasons": [
+                    "Chosen for the lowest generalized cost balancing ETA, wait time, and risk."
+                ],
+                "explanation_summary": "Chosen for the lowest generalized cost balancing ETA, wait time, and risk.",
                 "cost_breakdown": {
                     "travel_time_cost": 4.5,
                     "waiting_time_cost": 0.0,
@@ -600,8 +617,10 @@ class StubRouteOptimizationApiService:
                     "reliability_penalty_cost": 0.1,
                     "unstable_corridor_penalty_cost": 0.0,
                     "detour_penalty_cost": 0.0,
+                    "fragile_transfer_penalty_cost": 0.0,
                     "generalized_cost": 4.7,
                 },
+                "alternatives": [],
             },
         )()
 

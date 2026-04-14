@@ -132,12 +132,17 @@ class PredictionService:
                 segment_uncertainty=segment_uncertainty,
                 record=record,
             )
+            congestion_proxy_ratio = (
+                predicted_actual_segment_minutes / max(0.1, scheduled_segment_minutes)
+            )
             predictions.append(
                 {
                     "predicted_actual_segment_minutes": predicted_actual_segment_minutes,
                     "predicted_segment_delay_minutes": predicted_segment_delay_minutes,
                     "segment_uncertainty": segment_uncertainty,
                     "segment_reliability_score": segment_reliability_score,
+                    "congestion_proxy_ratio": congestion_proxy_ratio,
+                    "congestion_proxy_percent": (congestion_proxy_ratio - 1.0) * 100.0,
                     "predicted_eta_lower_minutes": max(
                         MIN_PREDICTED_SEGMENT_MINUTES,
                         predicted_actual_segment_minutes - segment_uncertainty,

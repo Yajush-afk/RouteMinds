@@ -21,6 +21,8 @@ class SegmentPrediction(BaseModel):
     predicted_segment_delay_minutes: float
     segment_uncertainty: float = Field(ge=0.0)
     segment_reliability_score: float = Field(ge=0.0, le=1.0)
+    congestion_proxy_ratio: float = Field(ge=0.0)
+    congestion_proxy_percent: float
     predicted_eta_lower_minutes: float = Field(ge=0.0)
     predicted_eta_upper_minutes: float = Field(ge=0.0)
 
