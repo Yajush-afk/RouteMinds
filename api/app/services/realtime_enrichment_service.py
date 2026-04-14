@@ -62,6 +62,9 @@ class SegmentLiveContext:
     route_delay_minutes_live: float
     segment_slowdown_index: float
     corridor_slowdown_score_live: float
+    corridor_instability_score_live: float
+    service_quality_score: float
+    persistent_unreliability_penalty: float
     bunching_indicator: float
     headway_irregularity_score_live: float
     stop_recent_arrival_gap_minutes: float
@@ -85,6 +88,9 @@ class RouteLiveContext:
     route_id: str
     rolling_route_delay_minutes: float
     corridor_slowdown_score_live: float
+    corridor_instability_score_live: float
+    service_quality_score: float
+    persistent_unreliability_penalty: float
     bunching_indicator: float
     headway_irregularity_score_live: float
     last_update_timestamp: int
@@ -665,6 +671,28 @@ class RealtimeEnrichmentService:
             )
             return asdict(status)
 
+    def _derive_route_system_signals(
+        self,
+        *,
+        rolling_route_delay_minutes: float,
+        corridor_slowdown_score_live: float,
+        headway_irregularity_score_live: float,
+        bunching_indicator: float,
+    ) -> tuple[float, float, float]:
+        corridor_instability_score_live = 0.0
+        corridor_instability_score_live += min(0.4, max(0.0, corridor_slowdown_score_live - 1.0) * 0.45)
+        corridor_instability_score_live += min(0.25, max(0.0, rolling_route_delay_minutes) / 20.0)
+        corridor_instability_score_live += min(0.2, max(0.0, headway_irregularity_score_live) * 0.2)
+        corridor_instability_score_live += min(0.15, max(0.0, bunching_indicator) * 0.15)
+        corridor_instability_score_live = max(0.0, min(1.0, corridor_instability_score_live))
+        service_quality_score = max(0.05, 1.0 - corridor_instability_score_live)
+        persistent_unreliability_penalty = min(2.0, corridor_instability_score_live * 2.0)
+        return (
+            corridor_instability_score_live,
+            service_quality_score,
+            persistent_unreliability_penalty,
+        )
+
     def _cache_is_fresh(self, reference_timestamp: int | None = None) -> bool:
         if self.latest_snapshot_time is None:
             return False
@@ -727,16 +755,30 @@ class RealtimeEnrichmentService:
         route_headway_irregularity_history.append(headway_irregularity_score_live)
         route_bunching_history = self.route_bunching_history[segment_observation.route_id]
         route_bunching_history.append(bunching_indicator)
+        route_bunching_average = sum(route_bunching_history) / len(route_bunching_history)
+        route_headway_irregularity_average = (
+            sum(route_headway_irregularity_history) / len(route_headway_irregularity_history)
+        )
+        (
+            corridor_instability_score_live,
+            service_quality_score,
+            persistent_unreliability_penalty,
+        ) = self._derive_route_system_signals(
+            rolling_route_delay_minutes=rolling_route_delay,
+            corridor_slowdown_score_live=corridor_slowdown_score_live,
+            headway_irregularity_score_live=route_headway_irregularity_average,
+            bunching_indicator=route_bunching_average,
+        )
 
         self.route_live_context[segment_observation.route_id] = RouteLiveContext(
             route_id=segment_observation.route_id,
             rolling_route_delay_minutes=rolling_route_delay,
             corridor_slowdown_score_live=corridor_slowdown_score_live,
-            bunching_indicator=sum(route_bunching_history) / len(route_bunching_history),
-            headway_irregularity_score_live=(
-                sum(route_headway_irregularity_history)
-                / len(route_headway_irregularity_history)
-            ),
+            corridor_instability_score_live=corridor_instability_score_live,
+            service_quality_score=service_quality_score,
+            persistent_unreliability_penalty=persistent_unreliability_penalty,
+            bunching_indicator=route_bunching_average,
+            headway_irregularity_score_live=route_headway_irregularity_average,
             last_update_timestamp=snapshot.snapshot_time,
         )
         self.stop_live_context[
@@ -760,6 +802,9 @@ class RealtimeEnrichmentService:
             route_delay_minutes_live=rolling_route_delay,
             segment_slowdown_index=segment_slowdown_index,
             corridor_slowdown_score_live=corridor_slowdown_score_live,
+            corridor_instability_score_live=corridor_instability_score_live,
+            service_quality_score=service_quality_score,
+            persistent_unreliability_penalty=persistent_unreliability_penalty,
             bunching_indicator=bunching_indicator,
             headway_irregularity_score_live=headway_irregularity_score_live,
             stop_recent_arrival_gap_minutes=stop_recent_arrival_gap_minutes,
