@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react"
 
 import { Layer, Source } from "react-map-gl/maplibre"
-import type { LayerSpecification } from "maplibre-gl"
+import type { LineLayerSpecification } from "maplibre-gl"
 
 import type { LngLat } from "@/features/map/domain/types"
 
@@ -55,7 +55,7 @@ function buildCurve(origin: LngLat, destination: LngLat) {
   })
 }
 
-const LINE_LAYER: LayerSpecification = {
+const LINE_LAYER: Omit<LineLayerSpecification, "source"> = {
   id: "route-connection-line",
   type: "line",
   layout: {

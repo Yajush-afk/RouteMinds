@@ -1,14 +1,17 @@
-import { Fragment } from "react"
-
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@workspace/ui/components/accordion"
-import { Separator } from "@workspace/ui/components/separator"
+} from "@/components/ui/accordion";
+import { motion } from "motion/react";
+import {
+  fadeUp,
+  landingViewport,
+  staggerContainer,
+} from "@/components/landing/motion";
 
-const faqs = [
+const faqItems = [
   {
     question: "How does RouteMinds predict delays?",
     answer:
@@ -17,63 +20,66 @@ const faqs = [
   {
     question: "Is the prediction accurate?",
     answer:
-      "Predictions are based on real patterns and provide a strong estimate with 94%+ accuracy, though exact times may vary slightly depending on unexpected events.",
+      "The model is designed around Delhi-specific traffic behavior and route history, so it performs best when enough route and timing data are available. Accuracy improves as more trip data is incorporated.",
   },
   {
     question: "Does it show real-time tracking?",
     answer:
-      "No, RouteMinds focuses on predicting future delays rather than live tracking. It tells you what to expect before you leave, not just what's happening right now.",
+      "RouteMinds combines predictive routing with real-time transit context, so you can factor in current movement signals while still planning ahead instead of reacting only to live traffic.",
   },
   {
     question: "Which routes does RouteMinds currently cover?",
     answer:
-      "RouteMinds currently covers major DTC bus routes across Delhi NCR, with a focus on high-traffic corridors like ITO, Connaught Place, and key metro interchange points.",
+      "The current focus is Delhi public transit workflows, especially routes where delay prediction and time-based route choice can make a practical difference for daily commuters.",
   },
   {
     question: "Is RouteMinds available for private vehicles too?",
     answer:
-      "Currently RouteMinds is optimized for public transit routes in Delhi. Support for private vehicle routing is on our roadmap and will be available in a future update.",
+      "The current product direction is centered on public transit planning. Private-vehicle support would require a different optimization layer and is not the primary use case right now.",
   },
-]
+];
 
-export default function FAQSection() {
+export function FaqSection() {
   return (
-    <section
-      id="faqs"
-      className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+    <motion.section
+      id="faq"
+      className="scroll-mt-24 py-10 md:py-14"
+      initial="hidden"
+      whileInView="visible"
+      viewport={landingViewport}
+      variants={staggerContainer(0.08, 0.12)}
     >
-      <div className="mx-auto max-w-3xl">
-        {/* Header */}
-        <div className="mb-10 text-center sm:mb-12">
-          <p className="font-body mb-3 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
-            Got Questions?
-          </p>
-          <h2 className="font-heading text-3xl text-foreground sm:text-4xl md:text-5xl">
-            Frequently Asked Questions
+      <div className="mx-auto max-w-3xl px-6">
+        <motion.div className="mb-10 text-center sm:mb-12" variants={fadeUp(24, 0.65)}>
+          <h2 className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            FAQ
           </h2>
-          <div className="mx-auto mt-4 h-1 w-10 rounded-full bg-[#5a2d14]"></div>
-        </div>
+        </motion.div>
 
-        {/* FAQ Items */}
-        <Accordion type="single" collapsible>
-          {faqs.map((faq, index) => (
-            <Fragment key={faq.question}>
+        <motion.div variants={fadeUp(30, 0.7)}>
+          <Accordion defaultValue={["faq-0"]} className="w-full">
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-lg shadow-zinc-100">
+            {faqItems.map((item, index) => (
               <AccordionItem
-                value={`item-${index}`}
-                className=" border-b-0 not-last:border-b-0"
+                key={item.question}
+                value={`faq-${index}`}
+                className="border-b-0 px-0 not-last:border-b-0"
               >
-                <AccordionTrigger className=" !font-heading rounded-xl text-base sm:text-lg !no-underline hover:!no-underline focus:!no-underline ">
-                  {faq.question}
+                <AccordionTrigger className="rounded-xl px-6 py-5 text-base font-medium text-black hover:no-underline sm:text-lg">
+                  <span className="pr-6">{item.question}</span>
                 </AccordionTrigger>
-                <AccordionContent className="font-body text-sm leading-relaxed sm:text-base">
-                  {faq.answer}
+                <AccordionContent className="px-6 pb-5 pt-0 text-sm leading-relaxed text-black/70 sm:text-base">
+                  {item.answer}
                 </AccordionContent>
+                {index < faqItems.length - 1 ? (
+                  <div className="h-px w-full bg-border" />
+                ) : null}
               </AccordionItem>
-              {index < faqs.length - 1 && <Separator />}
-            </Fragment>
-          ))}
-        </Accordion>
+            ))}
+            </div>
+          </Accordion>
+        </motion.div>
       </div>
-    </section>
-  )
+    </motion.section>
+  );
 }

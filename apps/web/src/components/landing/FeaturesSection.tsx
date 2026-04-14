@@ -1,104 +1,114 @@
-import { Brain, Clock, Route, TrendingUp } from "lucide-react"
-import { cn } from "@workspace/ui/lib/utils"
+import paperTexture from "@/assets/Paper Texture@2x.png";
+import featurePlaceholder from "@/assets/background-2x.png";
+import { motion } from "motion/react";
+import {
+  fadeIn,
+  fadeUp,
+  landingViewport,
+  staggerContainer,
+} from "@/components/landing/motion";
 
-const features = [
+const featureCards = [
   {
-    title: "Route Rationalization",
+    heading: "AI Delay Prediction",
+    subheading: "Prediction Stack",
     description:
-      "Dynamic route optimization based on ML-predicted segment travel times rather than static shortest distance.",
-    icon: <Route className="h-6 w-6" />,
+      "Estimate likely delays ahead of time using segment-level travel-time modeling. The prediction flow is trained on consecutive stop-event segments with temporal, route, and rolling-delay context, then exposed through segment prediction APIs that can be used directly for route scoring.",
   },
   {
-    title: "Delay Prediction",
+    heading: "Smarter Route Selection",
+    subheading: "Routing Engine",
     description:
-      "XGBoost-based segment travel-time prediction model trained on GTFS and simulated delay data.",
-    icon: <Clock className="h-6 w-6" />,
+      "Choose routes using predicted travel cost instead of static shortest distance. The routing layer builds a transit graph from GTFS stops, trips, routes, and stop times, then runs Dijkstra optimization over predicted segment travel-time costs based on origin, destination, and query time.",
   },
   {
-    title: "Route Selection",
+    heading: "Real-Time Transit Context",
+    subheading: "Realtime Signals",
     description:
-      "Dijkstra-based route optimization using predicted segment costs over a transit graph.",
-    icon: <Brain className="h-6 w-6" />,
+      "Keep decisions current by enriching routes with live operational updates. GTFS-RT vehicle positions continuously refresh delay context through realtime backend endpoints, and that delay enrichment feeds into downstream routing decisions so recommendations stay practical in changing traffic.",
   },
-  {
-    title: "Real-time Enrichment",
-    description:
-      "GTFS-RT vehicle position ingestion with live segment delay context injection into routing decisions.",
-    icon: <TrendingUp className="h-6 w-6" />,
-  },
-]
+];
 
-const Feature = ({
-  title,
-  description,
-  icon,
-  index,
-}: {
-  title: string
-  description: string
-  icon: React.ReactNode
-  index: number
-}) => {
+export function FeaturesSection() {
   return (
-    <div
-      className={cn(
-        "flex flex-col py-10 px-8 relative group/feature border-border transition-colors duration-200",
-        // right border for left column items
-        index % 2 === 0 && "md:border-r",
-        // top border for bottom row items
-        index >= 2 && "border-t",
-      )}
-    >
-      
-<div className="opacity-0 group-hover/feature:opacity-100 transition duration-200 absolute inset-0 bg-gradient-to-br from-[#fef3c7]/50 to-transparent pointer-events-none" />
-      {/* Icon */}
-      <div className="mb-4 relative z-10 text-[#5a2d14]">
-        {icon}
-      </div>
-
-      <div className="text-base font-semibold mb-3 relative z-10">
-        <div className="absolute -left-8 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-border group-hover/feature:bg-[#5a2d14] transition-all duration-200 origin-center" />
-        <span className="group-hover/feature:translate-x-2 transition duration-200 inline-block font-heading text-foreground">
-          {title}
-        </span>
-      </div>
-
-      <p className="font-body text-sm leading-relaxed text-muted-foreground max-w-xs relative z-10">
-        {description}
-      </p>
-    </div>
-  )
-}
-
-export default function FeaturesSectionGrid() {
-  return (
-    <section
+    <motion.section
       id="features"
-      className="bg-white px-4 py-16 sm:px-6 sm:py-20 md:px-10 lg:px-24"
+      className="relative z-10 -mt-12 scroll-mt-24 overflow-hidden py-20 md:-mt-14 md:py-24"
+      initial="hidden"
+      whileInView="visible"
+      viewport={landingViewport}
+      variants={staggerContainer(0.08, 0.14)}
     >
-      <div className="mx-auto max-w-7xl">
+      <motion.div
+        className="pointer-events-none absolute inset-0 z-0 bg-linear-to-b from-transparent via-background/80 to-background"
+        variants={fadeIn(0.7)}
+      />
+      <motion.div className="pointer-events-none absolute inset-0 z-10" variants={fadeIn(0.8, 0.1)}>
+        <motion.img
+          src={paperTexture}
+          alt=""
+          aria-hidden="true"
+          className="absolute left-1/2 top-20 hidden w-[150vw] max-w-none -translate-x-1/2 mix-blend-screen opacity-45 md:block md:top-32 md:w-[min(1400px,110vw)]"
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 0.45, y: 0 }}
+          viewport={landingViewport}
+          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        />
+      </motion.div>
 
-        <div className="mb-20 flex flex-col items-center text-center sm:mb-28">
-          <p className="font-body mb-4 text-xs font-semibold tracking-widest text-[#5a2d14] uppercase">
-            What We Offer
+      <div className="relative z-20 mx-auto w-full max-w-6xl px-6">
+        <motion.div className="mb-10 space-y-3 text-center md:mb-12" variants={fadeUp(28, 0.7)}>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            Features
           </p>
-          <h2 className="font-heading mb-4 whitespace-nowrap text-4xl   sm:text-4xl md:text-5xl">
-            Travel Smarter, Not Harder.
+          <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
+            Built for daily commuters.
           </h2>
-          <p className="font-body max-w-md text-lg leading-relaxed text-muted-foreground">
-            Our ML engine processes thousands of real-time data points to keep Delhi moving efficiently.
-          </p>
-        </div>
+        </motion.div>
 
-        <div className="border border-border rounded-2xl overflow-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-2">
-            {features.map((feature, index) => (
-              <Feature key={feature.title} {...feature} index={index} />
-            ))}
-          </div>
-        </div>
+        <motion.div
+          className="mx-auto flex w-full max-w-5xl flex-col gap-10"
+          variants={staggerContainer(0.14, 0.16)}
+        >
+          {featureCards.map((card, index) => (
+            <motion.div
+              key={card.heading}
+              className="grid items-center gap-6 md:grid-cols-2 md:gap-8"
+              variants={fadeUp(34, 0.7)}
+            >
+              <motion.article
+                className={`group overflow-hidden rounded-[32px] border border-border bg-card shadow-lg shadow-zinc-100 ${
+                  index === 1 ? "md:order-2" : ""
+                }`}
+                whileHover={{ y: -6 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+              >
+                <img
+                  src={featurePlaceholder}
+                  alt=""
+                  aria-hidden="true"
+                  className="aspect-[5/3] w-full scale-[1.15] object-cover transition-transform delay-200 duration-500 ease-out group-hover:scale-100"
+                />
+              </motion.article>
 
+              <motion.div
+                className={index === 1 ? "md:order-1" : "md:order-2"}
+                variants={fadeUp(24, 0.65)}
+              >
+                <h3 className="text-2xl font-semibold tracking-tight text-card-foreground md:text-3xl">
+                  {card.heading}
+                </h3>
+                <p className="mt-2 text-sm font-medium uppercase tracking-[0.18em] text-foreground/75">
+                  {card.subheading}
+                </p>
+                <p className="mt-4 max-w-prose text-base text-foreground/80">
+                  {card.description}
+                </p>
+              </motion.div>
+            </motion.div>
+          ))}
+        </motion.div>
       </div>
-    </section>
-  )
+    </motion.section>
+  );
 }
