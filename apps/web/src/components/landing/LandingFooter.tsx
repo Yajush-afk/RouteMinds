@@ -1,5 +1,5 @@
-import { FaGithub } from "react-icons/fa";
-import { FaXTwitter } from "react-icons/fa6";
+import { FaGithub } from "react-icons/fa"
+import { FaXTwitter } from "react-icons/fa6"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,14 +8,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
-import { motion } from "motion/react";
+} from "@/components/ui/dropdown-menu"
+import { Separator } from "@/components/ui/separator"
+import { motion } from "motion/react"
 import {
   fadeUp,
   landingViewport,
   staggerContainer,
-} from "@/components/landing/motion";
+} from "@/components/landing/motion"
 
 const footerSocialItems = [
   {
@@ -39,7 +39,7 @@ const footerSocialItems = [
     ],
     icon: FaGithub,
   },
-];
+]
 
 export function LandingFooter() {
   return (
@@ -53,51 +53,66 @@ export function LandingFooter() {
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
           <motion.div variants={fadeUp(24, 0.65)}>
-            <p className="text-base font-semibold tracking-tight text-foreground">
-              RouteMinds
+            <p className="inline-flex items-center gap-2 text-base font-semibold tracking-tight text-foreground">
+              <img
+                src="/favicon-monochrome.svg"
+                alt=""
+                className="size-5"
+                aria-hidden="true"
+              />
+              <span>RouteMinds</span>
             </p>
             <p className="mt-1">
               AI-powered transit planning for Delhi commuters.
             </p>
             <div className="mt-3 flex gap-2">
-              {footerSocialItems.map(({ label, menuLabel, actions, icon: Icon }) => (
-                <DropdownMenu key={label}>
-                  <DropdownMenuTrigger
-                    className="flex size-8 items-center justify-center rounded-lg border border-zinc-200 transition-colors duration-200 hover:bg-zinc-100"
-                    aria-label={label}
-                    title={label}
-                  >
-                    <Icon className="size-3.5" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    sideOffset={8}
-                    className="w-40"
-                  >
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>{menuLabel}</DropdownMenuLabel>
-                      {actions.map(({ label: actionLabel, href }, index) => (
-                        <div key={actionLabel}>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              window.open(href, "_blank", "noopener,noreferrer")
-                            }
-                          >
-                            {actionLabel}
-                          </DropdownMenuItem>
-                          {index < actions.length - 1 ? (
-                            <DropdownMenuSeparator />
-                          ) : null}
-                        </div>
-                      ))}
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ))}
+              {footerSocialItems.map(
+                ({ label, menuLabel, actions, icon: Icon }) => (
+                  <DropdownMenu key={label}>
+                    <DropdownMenuTrigger
+                      className="flex size-8 items-center justify-center rounded-lg border border-zinc-200 transition-colors duration-200 hover:bg-zinc-100"
+                      aria-label={label}
+                      title={label}
+                    >
+                      <Icon className="size-3.5" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      sideOffset={8}
+                      className="w-40"
+                    >
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>{menuLabel}</DropdownMenuLabel>
+                        {actions.map(({ label: actionLabel, href }, index) => (
+                          <div key={actionLabel}>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                window.open(
+                                  href,
+                                  "_blank",
+                                  "noopener,noreferrer"
+                                )
+                              }
+                            >
+                              {actionLabel}
+                            </DropdownMenuItem>
+                            {index < actions.length - 1 ? (
+                              <DropdownMenuSeparator />
+                            ) : null}
+                          </div>
+                        ))}
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )
+              )}
             </div>
           </motion.div>
 
-          <motion.div className="flex flex-col items-start gap-2" variants={fadeUp(24, 0.65)}>
+          <motion.div
+            className="flex flex-col items-start gap-2"
+            variants={fadeUp(24, 0.65)}
+          >
             <a href="/#features" className="transition hover:text-foreground">
               Features
             </a>
@@ -128,5 +143,5 @@ export function LandingFooter() {
         </div>
       </motion.div>
     </>
-  );
+  )
 }

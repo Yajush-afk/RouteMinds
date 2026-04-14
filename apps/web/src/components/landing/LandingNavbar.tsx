@@ -88,7 +88,7 @@ function NavbarAuthAction({ mobile = false }: { mobile?: boolean }) {
       <DropdownMenuTrigger
         aria-label="Account menu"
         title={triggerTitle}
-        className={`inline-flex ${avatarSizeClassName} items-center justify-center rounded-full border border-white/20 bg-white/12 p-0 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm transition hover:bg-white/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60`}
+        className={`inline-flex ${avatarSizeClassName} items-center justify-center rounded-full border border-white/20 bg-white/12 p-0 text-white shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur-sm transition hover:bg-white/18 focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none`}
       >
         <Avatar className="size-full">
           <AvatarImage src={user?.picture} alt={triggerTitle} />
@@ -142,9 +142,15 @@ export function LandingNavbar() {
         >
           <Link
             to="/"
-            className="text-xl font-semibold tracking-tight text-white sm:text-2xl"
+            className="inline-flex items-center gap-2 text-xl font-semibold tracking-tight text-white sm:text-2xl"
           >
-            RouteMinds
+            <img
+              src="/favicon.svg"
+              alt=""
+              className="size-6"
+              aria-hidden="true"
+            />
+            <span>RouteMinds</span>
           </Link>
 
           <div className="flex items-center gap-2 text-sm md:hidden">
@@ -162,7 +168,7 @@ export function LandingNavbar() {
         </motion.div>
 
         <motion.div
-          className="hidden absolute left-1/2 -translate-x-1/2 items-center gap-1 md:flex"
+          className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex"
           variants={fadeUp(16, 0.55)}
         >
           <a
