@@ -15,7 +15,23 @@ from api.app.services.realtime_enrichment_service import RealtimeEnrichmentServi
 
 MIN_EDGE_WEIGHT_MINUTES = 0.01
 TRANSFER_BUFFER_MINUTES = 5.0
-MAX_RELIABILITY_PENALTY_MINUTES = 3.0
+TRANSFER_PENALTY_MINUTES = 2.0
+MAX_UNCERTAINTY_PENALTY_MINUTES = 2.5
+MAX_RELIABILITY_PENALTY_MINUTES = 2.0
+MAX_UNSTABLE_CORRIDOR_PENALTY_MINUTES = 2.5
+MAX_DETOUR_PENALTY_MINUTES = 1.5
+
+
+@dataclass(frozen=True, slots=True)
+class CostBreakdown:
+    travel_time_cost: float
+    waiting_time_cost: float
+    transfer_penalty_cost: float
+    uncertainty_penalty_cost: float
+    reliability_penalty_cost: float
+    unstable_corridor_penalty_cost: float
+    detour_penalty_cost: float
+    generalized_cost: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +42,8 @@ class RouteOptimizationResult:
     predicted_eta_lower_minutes: float
     predicted_eta_upper_minutes: float
     route_reliability_score: float
+    generalized_cost_minutes: float
+    cost_breakdown: dict[str, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +61,7 @@ class RouteStep:
     scheduled_wait_minutes_before_boarding: float
     wait_minutes_before_boarding: float
     boarding_feasibility_score: float
+    cost_breakdown: CostBreakdown
 
 
 class RouteOptimizationService:
@@ -87,6 +106,17 @@ class RouteOptimizationService:
                 predicted_eta_lower_minutes=0.0,
                 predicted_eta_upper_minutes=0.0,
                 route_reliability_score=1.0,
+                generalized_cost_minutes=0.0,
+                cost_breakdown={
+                    "travel_time_cost": 0.0,
+                    "waiting_time_cost": 0.0,
+                    "transfer_penalty_cost": 0.0,
+                    "uncertainty_penalty_cost": 0.0,
+                    "reliability_penalty_cost": 0.0,
+                    "unstable_corridor_penalty_cost": 0.0,
+                    "detour_penalty_cost": 0.0,
+                    "generalized_cost": 0.0,
+                },
             )
 
         (
@@ -117,6 +147,8 @@ class RouteOptimizationService:
             predicted_eta_lower_minutes=route_summary["predicted_eta_lower_minutes"],
             predicted_eta_upper_minutes=route_summary["predicted_eta_upper_minutes"],
             route_reliability_score=route_summary["route_reliability_score"],
+            generalized_cost_minutes=float(generalized_costs[best_destination_state]),
+            cost_breakdown=route_summary["cost_breakdown"],
         )
 
     def _run_dijkstra(
@@ -198,15 +230,19 @@ class RouteOptimizationService:
                     prediction=prediction,
                     boarding_feasibility_score=boarding_feasibility_score,
                 )
+                cost_breakdown = self._generalized_cost_breakdown(
+                    edge=edge,
+                    current_state=current_state,
+                    prediction=prediction,
+                    travel_time_minutes=edge_weight,
+                    wait_minutes=wait_minutes_before_boarding,
+                    reliability_penalty_minutes=reliability_penalty_minutes,
+                    boarding_feasibility_score=boarding_feasibility_score,
+                )
                 candidate_eta = (
                     etas[current_state] + wait_minutes_before_boarding + edge_weight
                 )
-                candidate_distance = (
-                    current_distance
-                    + wait_minutes_before_boarding
-                    + edge_weight
-                    + reliability_penalty_minutes
-                )
+                candidate_distance = current_distance + cost_breakdown.generalized_cost
                 next_state = RouteState(
                     stop_id=edge.to_stop_id,
                     active_route_id=edge.route_id,
@@ -227,6 +263,7 @@ class RouteOptimizationService:
                         ),
                         wait_minutes_before_boarding=wait_minutes_before_boarding,
                         boarding_feasibility_score=boarding_feasibility_score,
+                        cost_breakdown=cost_breakdown,
                     )
                     heapq.heappush(
                         heap,
@@ -281,12 +318,16 @@ class RouteOptimizationService:
             for edge, departure_timestamp in uncached_edges
         ]
         predictions = self.prediction_service.predict_segments(segment_records)
-        for (edge, departure_timestamp), prediction in zip(
+        for (edge, departure_timestamp), prediction, segment_record in zip(
             uncached_edges,
             predictions,
+            segment_records,
             strict=True,
         ):
-            edge_prediction_cache[(edge, departure_timestamp)] = prediction
+            edge_prediction_cache[(edge, departure_timestamp)] = {
+                **segment_record,
+                **prediction,
+            }
 
     def _transfer_buffer_minutes(
         self,
@@ -351,6 +392,46 @@ class RouteOptimizationService:
             "headway_irregularity_score_live": headway_irregularity_score_live,
             "stop_recent_arrival_gap_minutes": stop_recent_arrival_gap_minutes,
         }
+
+    def _generalized_cost_breakdown(
+        self,
+        *,
+        edge: SegmentEdge,
+        current_state: RouteState,
+        prediction: dict[str, float],
+        travel_time_minutes: float,
+        wait_minutes: float,
+        reliability_penalty_minutes: float,
+        boarding_feasibility_score: float,
+    ) -> CostBreakdown:
+        transfer_penalty_cost = self._transfer_penalty_cost(
+            current_route_id=current_state.active_route_id,
+            next_route_id=edge.route_id,
+        )
+        uncertainty_penalty_cost = self._uncertainty_penalty_minutes(prediction=prediction)
+        unstable_corridor_penalty_cost = self._unstable_corridor_penalty_minutes(
+            prediction=prediction,
+        )
+        detour_penalty_cost = self._detour_penalty_minutes(edge=edge)
+        generalized_cost = (
+            travel_time_minutes
+            + wait_minutes
+            + transfer_penalty_cost
+            + uncertainty_penalty_cost
+            + reliability_penalty_minutes
+            + unstable_corridor_penalty_cost
+            + detour_penalty_cost
+        )
+        return CostBreakdown(
+            travel_time_cost=travel_time_minutes,
+            waiting_time_cost=wait_minutes,
+            transfer_penalty_cost=transfer_penalty_cost,
+            uncertainty_penalty_cost=uncertainty_penalty_cost,
+            reliability_penalty_cost=reliability_penalty_minutes,
+            unstable_corridor_penalty_cost=unstable_corridor_penalty_cost,
+            detour_penalty_cost=detour_penalty_cost,
+            generalized_cost=generalized_cost,
+        )
 
     def _estimate_wait_and_boarding(
         self,
@@ -446,6 +527,51 @@ class RouteOptimizationService:
         penalty = (segment_uncertainty * 0.25) + (instability * 1.25)
         return min(MAX_RELIABILITY_PENALTY_MINUTES, penalty)
 
+    def _transfer_penalty_cost(
+        self,
+        *,
+        current_route_id: str | None,
+        next_route_id: str,
+    ) -> float:
+        if current_route_id is None or current_route_id == next_route_id:
+            return 0.0
+        return TRANSFER_PENALTY_MINUTES
+
+    def _uncertainty_penalty_minutes(self, *, prediction: dict[str, float]) -> float:
+        segment_uncertainty = max(0.0, float(prediction.get("segment_uncertainty", 0.0)))
+        return min(MAX_UNCERTAINTY_PENALTY_MINUTES, segment_uncertainty * 0.35)
+
+    def _unstable_corridor_penalty_minutes(
+        self,
+        *,
+        prediction: dict[str, float],
+    ) -> float:
+        corridor_slowdown = max(
+            0.0,
+            float(prediction.get("corridor_slowdown_score_live", 1.0)) - 1.0,
+        )
+        segment_slowdown = max(
+            0.0,
+            float(prediction.get("segment_slowdown_index", 1.0)) - 1.0,
+        )
+        headway_irregularity = max(
+            0.0,
+            float(prediction.get("headway_irregularity_score_live", 0.0)),
+        )
+        bunching_indicator = max(0.0, float(prediction.get("bunching_indicator", 0.0)))
+        route_delay = max(0.0, float(prediction.get("route_delay_minutes_live", 0.0)))
+        penalty = 0.0
+        penalty += min(1.0, corridor_slowdown * 1.1)
+        penalty += min(0.8, segment_slowdown * 0.8)
+        penalty += min(0.4, headway_irregularity * 0.5)
+        penalty += min(0.2, bunching_indicator * 0.2)
+        penalty += min(0.4, route_delay / 15.0)
+        return min(MAX_UNSTABLE_CORRIDOR_PENALTY_MINUTES, penalty)
+
+    def _detour_penalty_minutes(self, *, edge: SegmentEdge) -> float:
+        excess_distance = max(0.0, edge.distance_to_prev_stop_km - 2.0)
+        return min(MAX_DETOUR_PENALTY_MINUTES, excess_distance * 0.35)
+
     def _reconstruct_edges(
         self,
         previous_step_by_state: dict[RouteState, RouteStep],
@@ -500,6 +626,14 @@ class RouteOptimizationService:
                 "scheduled_wait_minutes_before_boarding": step.scheduled_wait_minutes_before_boarding,
                 "wait_minutes_before_boarding": step.wait_minutes_before_boarding,
                 "boarding_feasibility_score": step.boarding_feasibility_score,
+                "travel_time_cost": step.cost_breakdown.travel_time_cost,
+                "waiting_time_cost": step.cost_breakdown.waiting_time_cost,
+                "transfer_penalty_cost": step.cost_breakdown.transfer_penalty_cost,
+                "uncertainty_penalty_cost": step.cost_breakdown.uncertainty_penalty_cost,
+                "reliability_penalty_cost": step.cost_breakdown.reliability_penalty_cost,
+                "unstable_corridor_penalty_cost": step.cost_breakdown.unstable_corridor_penalty_cost,
+                "detour_penalty_cost": step.cost_breakdown.detour_penalty_cost,
+                "generalized_cost": step.cost_breakdown.generalized_cost,
                 "predicted_actual_segment_minutes": edge_prediction_cache[
                     (step.edge, step.scheduled_departure_unix)
                 ][
@@ -545,6 +679,16 @@ class RouteOptimizationService:
                 "predicted_eta_lower_minutes": 0.0,
                 "predicted_eta_upper_minutes": 0.0,
                 "route_reliability_score": 1.0,
+                "cost_breakdown": {
+                    "travel_time_cost": 0.0,
+                    "waiting_time_cost": 0.0,
+                    "transfer_penalty_cost": 0.0,
+                    "uncertainty_penalty_cost": 0.0,
+                    "reliability_penalty_cost": 0.0,
+                    "unstable_corridor_penalty_cost": 0.0,
+                    "detour_penalty_cost": 0.0,
+                    "generalized_cost": 0.0,
+                },
             }
 
         total_wait = sum(float(segment["wait_minutes_before_boarding"]) for segment in segments)
@@ -556,6 +700,16 @@ class RouteOptimizationService:
         )
         reliability_weight_sum = 0.0
         weighted_reliability = 0.0
+        cost_breakdown = {
+            "travel_time_cost": 0.0,
+            "waiting_time_cost": 0.0,
+            "transfer_penalty_cost": 0.0,
+            "uncertainty_penalty_cost": 0.0,
+            "reliability_penalty_cost": 0.0,
+            "unstable_corridor_penalty_cost": 0.0,
+            "detour_penalty_cost": 0.0,
+            "generalized_cost": 0.0,
+        }
         for segment in segments:
             segment_weight = (
                 float(segment["predicted_actual_segment_minutes"])
@@ -569,6 +723,8 @@ class RouteOptimizationService:
             )
             reliability_weight_sum += segment_weight
             weighted_reliability += combined_reliability * segment_weight
+            for key in cost_breakdown:
+                cost_breakdown[key] += float(segment.get(key, 0.0))
 
         route_reliability_score = (
             weighted_reliability / reliability_weight_sum
@@ -579,4 +735,5 @@ class RouteOptimizationService:
             "predicted_eta_lower_minutes": max(0.0, total_lower),
             "predicted_eta_upper_minutes": max(total_lower, total_upper),
             "route_reliability_score": max(0.05, min(0.99, route_reliability_score)),
+            "cost_breakdown": cost_breakdown,
         }

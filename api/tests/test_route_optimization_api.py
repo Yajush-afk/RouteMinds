@@ -96,6 +96,20 @@ class StubRealtimeWaitService:
         return self.scheduled_headway_minutes
 
 
+class StubRealtimeSegmentService(StubRealtimeWaitService):
+    def __init__(
+        self,
+        *,
+        segment_contexts: dict[tuple[str, str, str], object],
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.segment_contexts = segment_contexts
+
+    def get_segment_live_context(self, route_id, from_stop_id, to_stop_id, *args, **kwargs):
+        return self.segment_contexts.get((str(route_id), str(from_stop_id), str(to_stop_id)))
+
+
 def build_test_graph() -> StaticTransitGraph:
     stops = {
         "A": StopNode("A", "Stop A", 28.70, 77.10),
@@ -138,6 +152,8 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         self.assertGreater(result.predicted_eta_upper_minutes, result.total_predicted_eta_minutes)
         self.assertLess(result.predicted_eta_lower_minutes, result.total_predicted_eta_minutes)
         self.assertGreater(result.route_reliability_score, 0.0)
+        self.assertGreaterEqual(result.generalized_cost_minutes, result.total_predicted_eta_minutes)
+        self.assertIn("generalized_cost", result.cost_breakdown)
 
     def test_same_origin_and_destination_returns_zero_eta(self) -> None:
         graph_service = StubGraphService(build_test_graph())
@@ -360,6 +376,105 @@ class RouteOptimizationServiceTests(unittest.TestCase):
         self.assertAlmostEqual(result.segments[0]["wait_minutes_before_boarding"], 10.0)
         self.assertEqual(result.segments[0]["boarding_feasibility_score"], 1.0)
 
+    def test_service_applies_transfer_penalty_to_forced_transfer_path(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 0.5, 1.0, 5.0, (8 * 3600,)),
+            SegmentEdge("R2", "B", "C", 2, 1.0, 1.0, 5.0, (8 * 3600 + 4 * 60,)),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": (edges[0],), "B": (edges[1],)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "B"): 4.0, ("B", "C"): 3.5}
+        )
+        service = RouteOptimizationService(StubGraphService(graph), prediction_service)
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+        self.assertGreater(result.cost_breakdown["transfer_penalty_cost"], 0.0)
+
+    def test_service_penalizes_unstable_corridor_when_eta_is_close(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 1.0, 0.8, 5.0, (8 * 3600,)),
+            SegmentEdge("R1", "B", "C", 2, 1.0, 0.8, 5.0, (8 * 3600 + 3 * 60,)),
+            SegmentEdge("R2", "A", "C", 1, 1.0, 0.8, 5.0, (8 * 3600,)),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": (edges[0], edges[2]), "B": (edges[1],)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "B"): 2.8, ("B", "C"): 2.8, ("A", "C"): 5.2}
+        )
+        segment_contexts = {
+            ("R2", "A", "C"): type(
+                "SegmentContext",
+                (),
+                {
+                    "prev_segment_delay": 0.0,
+                    "rolling_segment_delay_3": 0.0,
+                    "route_delay_minutes_live": 12.0,
+                    "segment_slowdown_index": 1.8,
+                    "corridor_slowdown_score_live": 2.0,
+                    "bunching_indicator": 1.0,
+                    "headway_irregularity_score_live": 0.8,
+                    "stop_recent_arrival_gap_minutes": 8.0,
+                },
+            )(),
+        }
+        realtime_service = StubRealtimeSegmentService(segment_contexts=segment_contexts)
+        service = RouteOptimizationService(
+            StubGraphService(graph),
+            prediction_service,
+            realtime_enrichment_service=realtime_service,
+        )
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+
+    def test_service_penalizes_excessive_detour_like_long_hop(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "B": StopNode("B", "Stop B", 28.71, 77.11),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edges = (
+            SegmentEdge("R1", "A", "B", 1, 1.0, 1.0, 5.0, (8 * 3600,)),
+            SegmentEdge("R1", "B", "C", 2, 1.0, 1.0, 5.0, (8 * 3600 + 3 * 60,)),
+            SegmentEdge("R1", "A", "C", 1, 1.0, 6.0, 5.0, (8 * 3600,)),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={"A": (edges[0], edges[2]), "B": (edges[1],)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "B"): 3.0, ("B", "C"): 3.0, ("A", "C"): 5.2}
+        )
+        service = RouteOptimizationService(StubGraphService(graph), prediction_service)
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
+
     def test_service_prefers_more_reliable_option_when_eta_is_close(self) -> None:
         class ReliabilityAwarePredictionService:
             def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
@@ -454,7 +569,16 @@ class StubRouteOptimizationApiService:
                         "distance_to_prev_stop_km": 1.2,
                         "scheduled_segment_minutes": 5.0,
                         "scheduled_wait_minutes_before_boarding": 0.0,
+                        "wait_minutes_before_boarding": 0.0,
                         "boarding_feasibility_score": 0.9,
+                        "travel_time_cost": 4.5,
+                        "waiting_time_cost": 0.0,
+                        "transfer_penalty_cost": 0.0,
+                        "uncertainty_penalty_cost": 0.1,
+                        "reliability_penalty_cost": 0.1,
+                        "unstable_corridor_penalty_cost": 0.0,
+                        "detour_penalty_cost": 0.0,
+                        "generalized_cost": 4.7,
                         "predicted_actual_segment_minutes": 4.5,
                         "predicted_segment_delay_minutes": -0.5,
                         "segment_uncertainty": 0.6,
@@ -467,6 +591,17 @@ class StubRouteOptimizationApiService:
                 "predicted_eta_lower_minutes": 3.9,
                 "predicted_eta_upper_minutes": 5.1,
                 "route_reliability_score": 0.92,
+                "generalized_cost_minutes": 4.7,
+                "cost_breakdown": {
+                    "travel_time_cost": 4.5,
+                    "waiting_time_cost": 0.0,
+                    "transfer_penalty_cost": 0.0,
+                    "uncertainty_penalty_cost": 0.1,
+                    "reliability_penalty_cost": 0.1,
+                    "unstable_corridor_penalty_cost": 0.0,
+                    "detour_penalty_cost": 0.0,
+                    "generalized_cost": 4.7,
+                },
             },
         )()
 
@@ -511,6 +646,7 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(response.segments), 1)
         self.assertEqual(response.total_predicted_eta_minutes, 4.5)
         self.assertEqual(response.route_reliability_score, 0.92)
+        self.assertEqual(response.generalized_cost_minutes, 4.7)
 
     async def test_unknown_stop_returns_404(self) -> None:
         with patch(

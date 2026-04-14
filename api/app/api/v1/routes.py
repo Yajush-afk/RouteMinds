@@ -48,4 +48,6 @@ async def optimize_route(
         predicted_eta_lower_minutes=result.predicted_eta_lower_minutes,
         predicted_eta_upper_minutes=result.predicted_eta_upper_minutes,
         route_reliability_score=result.route_reliability_score,
+        generalized_cost_minutes=result.generalized_cost_minutes,
+        cost_breakdown=result.cost_breakdown,
     )

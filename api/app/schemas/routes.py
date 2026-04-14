@@ -30,12 +30,31 @@ class RouteSegmentPrediction(BaseModel):
     scheduled_wait_minutes_before_boarding: float = Field(default=0.0, ge=0.0)
     wait_minutes_before_boarding: float = Field(default=0.0, ge=0.0)
     boarding_feasibility_score: float = Field(ge=0.0, le=1.0)
+    travel_time_cost: float = Field(ge=0.0)
+    waiting_time_cost: float = Field(ge=0.0)
+    transfer_penalty_cost: float = Field(ge=0.0)
+    uncertainty_penalty_cost: float = Field(ge=0.0)
+    reliability_penalty_cost: float = Field(ge=0.0)
+    unstable_corridor_penalty_cost: float = Field(ge=0.0)
+    detour_penalty_cost: float = Field(ge=0.0)
+    generalized_cost: float = Field(ge=0.0)
     predicted_actual_segment_minutes: float
     predicted_segment_delay_minutes: float
     segment_uncertainty: float = Field(ge=0.0)
     segment_reliability_score: float = Field(ge=0.0, le=1.0)
     predicted_eta_lower_minutes: float = Field(ge=0.0)
     predicted_eta_upper_minutes: float = Field(ge=0.0)
+
+
+class RouteCostBreakdown(BaseModel):
+    travel_time_cost: float = Field(ge=0.0)
+    waiting_time_cost: float = Field(ge=0.0)
+    transfer_penalty_cost: float = Field(ge=0.0)
+    uncertainty_penalty_cost: float = Field(ge=0.0)
+    reliability_penalty_cost: float = Field(ge=0.0)
+    unstable_corridor_penalty_cost: float = Field(ge=0.0)
+    detour_penalty_cost: float = Field(ge=0.0)
+    generalized_cost: float = Field(ge=0.0)
 
 
 class RouteOptimizationResponse(BaseModel):
@@ -45,3 +64,5 @@ class RouteOptimizationResponse(BaseModel):
     predicted_eta_lower_minutes: float = Field(ge=0.0)
     predicted_eta_upper_minutes: float = Field(ge=0.0)
     route_reliability_score: float = Field(ge=0.0, le=1.0)
+    generalized_cost_minutes: float = Field(ge=0.0)
+    cost_breakdown: RouteCostBreakdown
