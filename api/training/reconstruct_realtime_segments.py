@@ -5,11 +5,13 @@ import json
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
 from api.app.services.realtime_enrichment_service import (
+    DELHI_TIMEZONE,
     TripStopEvent,
     VehiclePositionSnapshot,
     haversine_km,
@@ -78,6 +80,7 @@ ALIGNMENT_SUMMARY_COLUMNS = [
     "realtime_trip_id",
     "vehicle_id",
     "start_date",
+    "effective_start_date",
     "start_time",
     "match_strategy",
     "candidate_count",
@@ -128,6 +131,7 @@ class SegmentRun:
     vehicle_id: str
     service_date: str
     start_date: str
+    effective_start_date: str
     start_time: str
     match_strategy: str
     from_stop_id: str
@@ -152,6 +156,7 @@ class ReconstructionStats:
     traces_seen: int = 0
     traces_processed: int = 0
     traces_missing_trip_template: int = 0
+    traces_with_effective_date_override: int = 0
     exact_trip_matches: int = 0
     exact_route_start_matches: int = 0
     public_route_start_matches: int = 0
@@ -307,6 +312,7 @@ def _trace_alignment_record(
     *,
     group_key: tuple[object, ...],
     resolution: MatchResolution,
+    effective_start_date: str,
 ) -> dict[str, object]:
     return {
         "service_date": str(group_key[0]),
@@ -314,6 +320,7 @@ def _trace_alignment_record(
         "realtime_trip_id": str(group_key[2]),
         "vehicle_id": str(group_key[3]),
         "start_date": str(group_key[4]),
+        "effective_start_date": effective_start_date,
         "start_time": str(group_key[5]),
         "match_strategy": resolution.strategy,
         "candidate_count": len(resolution.candidate_static_trip_ids),
@@ -328,10 +335,32 @@ def _seconds_to_hh_mm(seconds_from_midnight: int) -> str:
     return f"{hours:02d}:{minutes:02d}"
 
 
+def _timestamp_to_service_date(gps_timestamp: int) -> str:
+    return datetime.fromtimestamp(gps_timestamp, tz=DELHI_TIMEZONE).strftime("%Y%m%d")
+
+
+def _parse_yyyymmdd(value: str) -> datetime:
+    return datetime.strptime(value, "%Y%m%d").replace(tzinfo=DELHI_TIMEZONE)
+
+
+def _resolve_effective_start_date(raw_start_date: str, gps_timestamp: int) -> tuple[str, bool]:
+    timestamp_service_date = _timestamp_to_service_date(gps_timestamp)
+    try:
+        raw_date = _parse_yyyymmdd(raw_start_date)
+        inferred_date = _parse_yyyymmdd(timestamp_service_date)
+    except ValueError:
+        return timestamp_service_date, True
+
+    if abs((inferred_date - raw_date).days) > 1:
+        return timestamp_service_date, True
+    return raw_start_date, False
+
+
 def _infer_segment_snapshot(
     *,
     snapshot: VehiclePositionSnapshot,
     bundle: TripTemplateBundle,
+    effective_start_date: str,
     segment_templates: tuple[dict[str, object], ...],
     previous_snapshot: VehiclePositionSnapshot | None,
     previous_inferred: InferredSegmentSnapshot | None,
@@ -353,7 +382,7 @@ def _infer_segment_snapshot(
             int(template["to_arrival_seconds"]) - int(template["from_departure_seconds"]),
         ) // 2
         scheduled_midpoint_unix = scheduled_unix_from_service_date(
-            snapshot.start_date,
+            effective_start_date,
             midpoint_seconds,
         )
         time_alignment_penalty = abs(snapshot.gps_timestamp - scheduled_midpoint_unix) / 60.0
@@ -391,11 +420,11 @@ def _infer_segment_snapshot(
             from_stop_sequence=int(template["from_stop_sequence"]),
             to_stop_sequence=int(template["to_stop_sequence"]),
             scheduled_departure_unix=scheduled_unix_from_service_date(
-                snapshot.start_date,
+                effective_start_date,
                 int(template["from_departure_seconds"]),
             ),
             scheduled_arrival_unix=scheduled_unix_from_service_date(
-                snapshot.start_date,
+                effective_start_date,
                 int(template["to_arrival_seconds"]),
             ),
             scheduled_segment_minutes=float(template["scheduled_segment_minutes"]),
@@ -411,6 +440,7 @@ def _build_segment_runs_for_trace(
     *,
     bundle: TripTemplateBundle,
     resolution: MatchResolution,
+    effective_start_date: str,
     stats: ReconstructionStats,
 ) -> list[SegmentRun]:
     runs: list[SegmentRun] = []
@@ -433,6 +463,7 @@ def _build_segment_runs_for_trace(
         inferred = _infer_segment_snapshot(
             snapshot=snapshot,
             bundle=bundle,
+            effective_start_date=effective_start_date,
             segment_templates=bundle.segment_templates,
             previous_snapshot=previous_snapshot,
             previous_inferred=previous_inferred,
@@ -459,6 +490,7 @@ def _build_segment_runs_for_trace(
                     vehicle_id=snapshot.vehicle_id,
                     service_date=str(getattr(row, "service_date")),
                     start_date=snapshot.start_date,
+                    effective_start_date=effective_start_date,
                     start_time=snapshot.start_time,
                     match_strategy=resolution.strategy,
                     from_stop_id=inferred.from_stop_id,
@@ -617,6 +649,7 @@ def _reconstruct_segments_from_runs(
                 "trip_id": run.static_trip_id,
                 "vehicle_id": run.vehicle_id,
                 "start_date": run.start_date,
+                "effective_start_date": run.effective_start_date,
                 "start_time": run.start_time,
                 "trip_start_scheduled_unix": trip_start_scheduled_unix,
                 "from_stop_id": run.from_stop_id,
@@ -759,6 +792,12 @@ def reconstruct_segments_for_service_date(
     grouped = service_date_frame.groupby(TRACE_GROUP_COLUMNS, sort=False)
     for group_key, trace_frame in grouped:
         stats.traces_seen += 1
+        effective_start_date, used_date_override = _resolve_effective_start_date(
+            str(group_key[4]),
+            int(trace_frame.iloc[0]["gps_timestamp"]),
+        )
+        if used_date_override:
+            stats.traces_with_effective_date_override += 1
         resolution = _resolve_trace_alignment(
             group_key=group_key,
             trip_segments=trip_segments,
@@ -766,7 +805,13 @@ def reconstruct_segments_for_service_date(
             public_route_start_index=public_route_start_index,
             public_route_index=public_route_index,
         )
-        alignment_rows.append(_trace_alignment_record(group_key=group_key, resolution=resolution))
+        alignment_rows.append(
+            _trace_alignment_record(
+                group_key=group_key,
+                resolution=resolution,
+                effective_start_date=effective_start_date,
+            )
+        )
         _update_alignment_stats(stats, resolution)
         if resolution.bundle is None:
             stats.traces_missing_trip_template += 1
@@ -776,6 +821,7 @@ def reconstruct_segments_for_service_date(
             trace_frame,
             bundle=resolution.bundle,
             resolution=resolution,
+            effective_start_date=effective_start_date,
             stats=stats,
         )
         rows.extend(_reconstruct_segments_from_runs(runs, stats=stats))
@@ -870,6 +916,7 @@ def reconstruct_realtime_segments(
         "traces_seen": stats.traces_seen,
         "traces_processed": stats.traces_processed,
         "traces_missing_trip_template": stats.traces_missing_trip_template,
+        "traces_with_effective_date_override": stats.traces_with_effective_date_override,
         "exact_trip_matches": stats.exact_trip_matches,
         "exact_route_start_matches": stats.exact_route_start_matches,
         "public_route_start_matches": stats.public_route_start_matches,
@@ -909,6 +956,10 @@ def main() -> None:
     print(f"Traces seen: {report['traces_seen']}")
     print(f"Traces processed: {report['traces_processed']}")
     print(f"Traces missing trip template: {report['traces_missing_trip_template']}")
+    print(
+        "Traces with effective-date override: "
+        f"{report['traces_with_effective_date_override']}"
+    )
     print(f"Exact trip matches: {report['exact_trip_matches']}")
     print(f"Exact route+start matches: {report['exact_route_start_matches']}")
     print(f"Public route+start matches: {report['public_route_start_matches']}")
