@@ -76,6 +76,12 @@ class RouteAlternativeSummary(BaseModel):
     generalized_cost_minutes: float = Field(ge=0.0)
 
 
+class RoutePathCoordinate(BaseModel):
+    stop_id: str
+    lat: float
+    lon: float
+
+
 class RouteOptimizationResponse(BaseModel):
     stops: list[RouteStop]
     segments: list[RouteSegmentPrediction]
@@ -95,4 +101,5 @@ class RouteOptimizationResponse(BaseModel):
     selection_reasons: list[str]
     explanation_summary: str
     cost_breakdown: RouteCostBreakdown
+    route_path_coordinates: list[RoutePathCoordinate]
     alternatives: list[RouteAlternativeSummary] = Field(default_factory=list)

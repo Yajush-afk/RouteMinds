@@ -22,6 +22,24 @@ class StubStopsGraphService:
             }
         ][:limit]
 
+    def search_stops(self, query: str, *, limit: int = 8):
+        return [
+            {
+                "stop_id": "STOP_A",
+                "stop_name": f"{query.title()} Terminal",
+                "stop_lat": 28.7,
+                "stop_lon": 77.1,
+                "match_score": 80.0,
+            },
+            {
+                "stop_id": "STOP_B",
+                "stop_name": f"{query.title()} Depot",
+                "stop_lat": 28.71,
+                "stop_lon": 77.11,
+                "match_score": 60.0,
+            },
+        ][:limit]
+
 
 class StopsApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
@@ -51,6 +69,11 @@ class StopsApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    async def test_stop_search_endpoint_requires_authentication(self) -> None:
+        response = await self._request("/api/v1/stops/search?q=narela")
+
+        self.assertEqual(response.status_code, 401)
+
     async def test_nearby_stops_endpoint_returns_nearest_stops(self) -> None:
         app.dependency_overrides[require_auth] = lambda: {
             "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
@@ -68,6 +91,25 @@ class StopsApiTests(unittest.IsolatedAsyncioTestCase):
         payload = response.json()
         self.assertEqual(len(payload["stops"]), 1)
         self.assertEqual(payload["stops"][0]["stop_id"], "STOP_A")
+
+    async def test_stop_search_endpoint_returns_ranked_results(self) -> None:
+        app.dependency_overrides[require_auth] = lambda: {
+            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
+            "role": "authenticated",
+            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
+        }
+
+        with patch(
+            "api.app.api.v1.stops.get_gtfs_graph_service",
+            return_value=StubStopsGraphService(),
+        ):
+            response = await self._request("/api/v1/stops/search?q=narela&limit=2")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["stops"]), 2)
+        self.assertEqual(payload["stops"][0]["stop_id"], "STOP_A")
+        self.assertGreater(payload["stops"][0]["match_score"], payload["stops"][1]["match_score"])
 
 
 if __name__ == "__main__":

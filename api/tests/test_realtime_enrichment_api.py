@@ -663,6 +663,45 @@ class RealtimeEnrichmentTests(unittest.TestCase):
         )
         self.assertFalse(realtime_service.get_status()["cache_is_fresh"])
 
+    def test_refresh_evicts_stale_cached_state(self) -> None:
+        stop_b_arrival = scheduled_unix_from_service_date("20250401", 8 * 3600 + 5 * 60)
+        initial_snapshots = [
+            make_snapshot(
+                vehicle_id="V1",
+                trip_id="TRIP_1",
+                gps_timestamp=stop_b_arrival + 60,
+                snapshot_time=stop_b_arrival + 65,
+            ),
+        ]
+        refreshed_snapshots = [
+            make_snapshot(
+                vehicle_id="V2",
+                trip_id="TRIP_2",
+                start_time="09:00:00",
+                gps_timestamp=scheduled_unix_from_service_date("20250401", 9 * 3600 + 60),
+                snapshot_time=scheduled_unix_from_service_date("20250401", 9 * 3600 + 65),
+            ),
+        ]
+        ingestion = FakeIngestionService(initial_snapshots)
+        service = RealtimeEnrichmentService(
+            gtfs_static_dir=self.gtfs_dir,
+            ingestion_service=ingestion,
+            cache_max_age_seconds=60,
+        )
+
+        service.refresh_vehicle_positions()
+        self.assertEqual(service.get_status()["cached_segments"], 1)
+
+        ingestion.snapshots = refreshed_snapshots
+        with patch("api.app.services.realtime_enrichment_service.time.time", return_value=scheduled_unix_from_service_date("20250401", 9 * 3600 + 70)):
+            service.refresh_vehicle_positions()
+
+        status = service.get_status()
+        self.assertEqual(status["cached_segments"], 1)
+        self.assertEqual(status["cached_vehicles"], 1)
+        self.assertNotIn("V1", service.latest_vehicle_snapshot)
+        self.assertIn("V2", service.latest_vehicle_snapshot)
+
     def test_snapshot_persistence_writes_json_file(self) -> None:
         snapshot_path = self.gtfs_dir / "snapshots.json"
         service = GTFSRealtimeIngestionService(

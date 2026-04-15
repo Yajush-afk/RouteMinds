@@ -609,6 +609,10 @@ class StubRouteOptimizationApiService:
                     "Chosen for the lowest generalized cost balancing ETA, wait time, and risk."
                 ],
                 "explanation_summary": "Chosen for the lowest generalized cost balancing ETA, wait time, and risk.",
+                "route_path_coordinates": [
+                    {"stop_id": "A", "lat": 28.70, "lon": 77.10},
+                    {"stop_id": "B", "lat": 28.71, "lon": 77.11},
+                ],
                 "cost_breakdown": {
                     "travel_time_cost": 4.5,
                     "waiting_time_cost": 0.0,
@@ -669,6 +673,7 @@ class RouteOptimizationApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.transfer_count, 0)
         self.assertTrue(response.selection_reasons)
         self.assertIn("generalized cost", response.explanation_summary.lower())
+        self.assertEqual(len(response.route_path_coordinates), 2)
         self.assertEqual(response.generalized_cost_minutes, 4.7)
 
     async def test_unknown_stop_returns_404(self) -> None:

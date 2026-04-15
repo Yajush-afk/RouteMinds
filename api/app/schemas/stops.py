@@ -13,3 +13,15 @@ class NearbyStop(BaseModel):
 
 class NearbyStopsResponse(BaseModel):
     stops: list[NearbyStop]
+
+
+class StopSearchResult(BaseModel):
+    stop_id: str
+    stop_name: str
+    stop_lat: float
+    stop_lon: float
+    match_score: float = Field(ge=0.0)
+
+
+class StopSearchResponse(BaseModel):
+    stops: list[StopSearchResult]

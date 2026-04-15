@@ -79,6 +79,23 @@ class PredictionServiceTests(unittest.TestCase):
         )
         self.assertGreater(predictions[0]["congestion_proxy_ratio"], 1.0)
 
+    def test_service_clamps_negative_predicted_segment_minutes(self) -> None:
+        service = PredictionService(
+            model_path="artifacts/models/xgboost_segment_travel_time_model.joblib",
+            schema_path="artifacts/models/xgboost_segment_travel_time_schema.json",
+        )
+        records = [make_segment_payload()]
+
+        with patch.object(
+            service.predictor,
+            "predict_batch",
+            return_value=[-3.0],
+        ):
+            predictions = service.predict_segments(records)
+
+        self.assertEqual(predictions[0]["predicted_actual_segment_minutes"], 0.01)
+        self.assertEqual(predictions[0]["predicted_eta_lower_minutes"], 0.01)
+
 
 class PredictionApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:

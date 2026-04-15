@@ -60,5 +60,6 @@ async def optimize_route(
         selection_reasons=result.selection_reasons,
         explanation_summary=result.explanation_summary,
         cost_breakdown=result.cost_breakdown,
+        route_path_coordinates=result.route_path_coordinates,
         alternatives=result.alternatives,
     )

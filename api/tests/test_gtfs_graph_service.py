@@ -25,9 +25,10 @@ class GTFSGraphServiceTests(unittest.TestCase):
             self.gtfs_dir / "stops.txt",
             ["stop_code", "stop_id", "stop_lat", "stop_lon", "stop_name", "zone_id"],
             [
-                ["A", "STOP_A", "28.7000", "77.1000", "Stop A", "1"],
-                ["B", "STOP_B", "28.7100", "77.1100", "Stop B", "1"],
-                ["C", "STOP_C", "28.7200", "77.1200", "Stop C", "1"],
+                ["A", "STOP_A", "28.7000", "77.1000", "Narela Terminal", "1"],
+                ["B", "STOP_B", "28.7100", "77.1100", "Police Station Narela", "1"],
+                ["C", "STOP_C", "28.7200", "77.1200", "Narela Sector 5", "1"],
+                ["D", "STOP_D", "28.7210", "77.1210", "Narela Sec 5 Depot", "1"],
             ],
         )
         write_csv(
@@ -38,7 +39,7 @@ class GTFSGraphServiceTests(unittest.TestCase):
         write_csv(
             self.gtfs_dir / "trips.txt",
             ["route_id", "service_id", "trip_id", "shape_id"],
-            [["R1", "WK", "TRIP_1", ""]],
+            [["R1", "WK", "TRIP_1", ""], ["R1", "WK", "TRIP_2", ""]],
         )
         write_csv(
             self.gtfs_dir / "stop_times.txt",
@@ -47,6 +48,9 @@ class GTFSGraphServiceTests(unittest.TestCase):
                 ["TRIP_1", "08:00:00", "08:00:00", "STOP_A", "0"],
                 ["TRIP_1", "08:05:00", "08:05:00", "STOP_B", "1"],
                 ["TRIP_1", "08:10:00", "08:10:00", "STOP_C", "2"],
+                ["TRIP_2", "09:00:00", "09:00:00", "STOP_A", "0"],
+                ["TRIP_2", "09:05:00", "09:05:00", "STOP_C", "1"],
+                ["TRIP_2", "09:10:00", "09:10:00", "STOP_D", "2"],
             ],
         )
 
@@ -59,8 +63,8 @@ class GTFSGraphServiceTests(unittest.TestCase):
 
         graph = service.get_graph()
 
-        self.assertEqual(graph.stop_count, 3)
-        self.assertEqual(graph.edge_count, 2)
+        self.assertEqual(graph.stop_count, 4)
+        self.assertEqual(graph.edge_count, 4)
 
         first_edge = graph.get_outgoing_edges("STOP_A")[0]
         self.assertEqual(first_edge.route_id, "R1")
@@ -80,15 +84,18 @@ class GTFSGraphServiceTests(unittest.TestCase):
                 ["TRIP_1", "08:10:00", "08:10:00", "STOP_C", "2"],
                 ["TRIP_1", "08:00:00", "08:00:00", "STOP_A", "0"],
                 ["TRIP_1", "08:05:00", "08:05:00", "STOP_B", "1"],
+                ["TRIP_2", "09:10:00", "09:10:00", "STOP_D", "2"],
+                ["TRIP_2", "09:00:00", "09:00:00", "STOP_A", "0"],
+                ["TRIP_2", "09:05:00", "09:05:00", "STOP_C", "1"],
             ],
         )
 
         service = GTFSGraphService(self.gtfs_dir)
         graph = service.get_graph()
 
-        self.assertEqual(graph.edge_count, 2)
+        self.assertEqual(graph.edge_count, 4)
         outgoing = graph.get_outgoing_edges("STOP_A")
-        self.assertEqual(len(outgoing), 1)
+        self.assertEqual(len(outgoing), 2)
         self.assertEqual(outgoing[0].to_stop_id, "STOP_B")
         self.assertEqual(outgoing[0].scheduled_departure_seconds, (8 * 3600,))
 
@@ -108,6 +115,23 @@ class GTFSGraphServiceTests(unittest.TestCase):
             service.get_graph()
 
         self.assertIn("routes.txt", str(context.exception))
+
+    def test_stop_search_handles_aliases_and_popularity(self) -> None:
+        service = GTFSGraphService(self.gtfs_dir)
+
+        results = service.search_stops("narela sec 5", limit=3)
+
+        self.assertGreaterEqual(len(results), 2)
+        self.assertEqual(results[0]["stop_id"], "STOP_D")
+        self.assertEqual(results[1]["stop_id"], "STOP_C")
+
+    def test_stop_search_handles_fuzzy_queries(self) -> None:
+        service = GTFSGraphService(self.gtfs_dir)
+
+        results = service.search_stops("police staton narela", limit=3)
+
+        self.assertGreaterEqual(len(results), 1)
+        self.assertEqual(results[0]["stop_id"], "STOP_B")
 
 
 if __name__ == "__main__":

@@ -41,6 +41,10 @@ async def realtime_refresh_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime_configuration()
+    if not settings.auth_enabled:
+        logger.warning(
+            "Supabase auth is disabled. Protected API routes are open; use this only for local development."
+        )
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     refresh_task = asyncio.create_task(realtime_refresh_loop())
     try:

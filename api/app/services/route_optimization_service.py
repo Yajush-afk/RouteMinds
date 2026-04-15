@@ -71,6 +71,7 @@ class RouteOptimizationResult:
     service_quality_score: float
     selection_reasons: list[str]
     explanation_summary: str
+    route_path_coordinates: list[dict[str, str | float]]
     alternatives: list[dict[str, str | float]]
 
 
@@ -157,6 +158,13 @@ class RouteOptimizationService:
                 service_quality_score=1.0,
                 selection_reasons=["Origin and destination are the same stop."],
                 explanation_summary="No travel is required for this query.",
+                route_path_coordinates=[
+                    {
+                        "stop_id": stop.stop_id,
+                        "lat": stop.stop_lat,
+                        "lon": stop.stop_lon,
+                    }
+                ],
                 alternatives=[],
             )
 
@@ -200,6 +208,7 @@ class RouteOptimizationService:
             service_quality_score=route_summary["service_quality_score"],
             selection_reasons=route_summary["selection_reasons"],
             explanation_summary=route_summary["explanation_summary"],
+            route_path_coordinates=self._build_route_path_coordinates(stops),
             alternatives=[],
         )
 
@@ -841,6 +850,19 @@ class RouteOptimizationService:
                 ),
             }
             for step in route_steps
+        ]
+
+    def _build_route_path_coordinates(
+        self,
+        stops: list[dict[str, str | float]],
+    ) -> list[dict[str, str | float]]:
+        return [
+            {
+                "stop_id": str(stop["stop_id"]),
+                "lat": float(stop["stop_lat"]),
+                "lon": float(stop["stop_lon"]),
+            }
+            for stop in stops
         ]
 
     def _selection_reasons(
