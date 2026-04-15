@@ -14,6 +14,7 @@ from api.app.api.v1.routes import router as routes_router
 from api.app.api.v1.stops import router as stops_router
 from api.app.core.config import settings
 from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
+from api.app.services.gtfs_graph_service import GTFSGraphService
 from api.app.services.realtime_enrichment_service import get_realtime_enrichment_service
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,15 @@ async def realtime_refresh_loop() -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def warm_static_graph() -> None:
+    try:
+        await asyncio.to_thread(
+            GTFSGraphService(settings.GTFS_STATIC_DIR).get_graph
+        )
+    except Exception as exc:
+        logger.warning("Static graph warm-up failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime_configuration()
@@ -46,10 +56,14 @@ async def lifespan(app: FastAPI):
             "Supabase auth is disabled. Protected API routes are open; use this only for local development."
         )
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    graph_warmup_task = asyncio.create_task(warm_static_graph())
     refresh_task = asyncio.create_task(realtime_refresh_loop())
     try:
         yield
     finally:
+        graph_warmup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await graph_warmup_task
         refresh_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await refresh_task

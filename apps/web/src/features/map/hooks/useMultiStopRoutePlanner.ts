@@ -300,10 +300,24 @@ export function useMultiStopRoutePlanner() {
               0
             ),
             status: "ready",
-            lineCoordinates: result.stops.map((stop) => [
-              stop.position.lng,
-              stop.position.lat,
-            ]),
+            lineCoordinates: [
+              ...(result.stops[0]?.stopId !== baseLeg.fromStop.stopId
+                ? [[baseLeg.fromStop.position.lng, baseLeg.fromStop.position.lat] as [
+                    number,
+                    number,
+                  ]]
+                : []),
+              ...result.stops.map((stop) => [
+                stop.position.lng,
+                stop.position.lat,
+              ] as [number, number]),
+              ...(result.stops[result.stops.length - 1]?.stopId !== baseLeg.toStop.stopId
+                ? [[baseLeg.toStop.position.lng, baseLeg.toStop.position.lat] as [
+                    number,
+                    number,
+                  ]]
+                : []),
+            ],
           })
         } catch (error) {
           if (

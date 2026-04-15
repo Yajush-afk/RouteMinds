@@ -41,11 +41,20 @@ class StubPredictionService:
 
 
 class StubGraphService:
-    def __init__(self, graph: StaticTransitGraph):
+    def __init__(
+        self,
+        graph: StaticTransitGraph,
+        *,
+        search_results_by_query: dict[str, list[dict[str, str | float]]] | None = None,
+    ):
         self.graph = graph
+        self.search_results_by_query = search_results_by_query or {}
 
     def get_graph(self) -> StaticTransitGraph:
         return self.graph
+
+    def search_stops(self, query: str, *, limit: int = 8) -> list[dict[str, str | float]]:
+        return self.search_results_by_query.get(query, [])[:limit]
 
 
 class StubRealtimeWaitService:
@@ -187,6 +196,72 @@ class RouteOptimizationServiceTests(unittest.TestCase):
 
         with self.assertRaises(RouteNotFoundException):
             service.optimize_route("A", "D", 1742803800)
+
+    def test_service_falls_back_to_equivalent_stop_variants(self) -> None:
+        stops = {
+            "O1": StopNode("O1", "Origin Stop", 28.70, 77.10),
+            "O2": StopNode("O2", "Origin Stop Platform 2", 28.7005, 77.1005),
+            "B": StopNode("B", "Intermediate", 28.71, 77.11),
+            "D1": StopNode("D1", "Destination Stop", 28.72, 77.12),
+            "D2": StopNode("D2", "Destination Stop Platform 2", 28.7205, 77.1205),
+        }
+        edges = (
+            SegmentEdge("R1", "O1", "B", 1, 0.5, 1.0, 5.0),
+            SegmentEdge("R1", "B", "D2", 2, 1.0, 1.0, 5.0),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={
+                "O1": (edges[0],),
+                "B": (edges[1],),
+            },
+        )
+        graph_service = StubGraphService(
+            graph,
+            search_results_by_query={
+                "Origin Stop": [
+                    {
+                        "stop_id": "O1",
+                        "stop_name": "Origin Stop",
+                        "stop_lat": 28.70,
+                        "stop_lon": 77.10,
+                    },
+                    {
+                        "stop_id": "O2",
+                        "stop_name": "Origin Stop Platform 2",
+                        "stop_lat": 28.7005,
+                        "stop_lon": 77.1005,
+                    },
+                ],
+                "Destination Stop": [
+                    {
+                        "stop_id": "D1",
+                        "stop_name": "Destination Stop",
+                        "stop_lat": 28.72,
+                        "stop_lon": 77.12,
+                    },
+                    {
+                        "stop_id": "D2",
+                        "stop_name": "Destination Stop Platform 2",
+                        "stop_lat": 28.7205,
+                        "stop_lon": 77.1205,
+                    },
+                ],
+            },
+        )
+        prediction_service = StubPredictionService(
+            {
+                ("O1", "B"): 4.0,
+                ("B", "D2"): 4.0,
+            }
+        )
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        result = service.optimize_route("O1", "D1", 1742803800)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["O1", "B", "D2"])
+        self.assertEqual(len(result.segments), 2)
 
     def test_service_scores_downstream_edges_with_arrival_time(self) -> None:
         class TimeAwarePredictionService:
