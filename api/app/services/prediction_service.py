@@ -117,7 +117,10 @@ class PredictionService:
         predictions: list[dict[str, float]] = []
         for prediction, record in zip(travel_time_predictions, segment_records, strict=True):
             scheduled_segment_minutes = float(record["scheduled_segment_minutes"])
-            predicted_actual_segment_minutes = float(prediction)
+            predicted_actual_segment_minutes = max(
+                MIN_PREDICTED_SEGMENT_MINUTES,
+                float(prediction),
+            )
             predicted_segment_delay_minutes = float(
                 predicted_actual_segment_minutes - scheduled_segment_minutes
             )

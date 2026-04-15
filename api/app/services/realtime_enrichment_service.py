@@ -524,11 +524,76 @@ class RealtimeEnrichmentService:
             last_refresh_error=None,
         )
 
+    def _evict_stale_state(self, reference_timestamp: int) -> None:
+        stale_segment_keys = [
+            key
+            for key, context in self.segment_live_context.items()
+            if self._context_is_stale(context, reference_timestamp)
+        ]
+        for key in stale_segment_keys:
+            self.segment_live_context.pop(key, None)
+
+        stale_route_keys = [
+            key
+            for key, context in self.route_live_context.items()
+            if self._context_is_stale(context, reference_timestamp)
+        ]
+        for key in stale_route_keys:
+            self.route_live_context.pop(key, None)
+
+        stale_stop_keys = [
+            key
+            for key, context in self.stop_live_context.items()
+            if self._context_is_stale(context, reference_timestamp)
+        ]
+        for key in stale_stop_keys:
+            self.stop_live_context.pop(key, None)
+
+        stale_vehicle_ids = [
+            vehicle_id
+            for vehicle_id, snapshot in self.latest_vehicle_snapshot.items()
+            if (reference_timestamp - snapshot.snapshot_time) > self.cache_max_age_seconds
+        ]
+        for vehicle_id in stale_vehicle_ids:
+            self.latest_vehicle_snapshot.pop(vehicle_id, None)
+            self.latest_vehicle_observation.pop(vehicle_id, None)
+
+        active_trip_keys = {
+            (observation.trip_id, observation.to_stop_id)
+            for observation in self.latest_vehicle_observation.values()
+        }
+        stale_history_keys = [
+            key for key in self.segment_delay_history if key not in active_trip_keys
+        ]
+        for key in stale_history_keys:
+            self.segment_delay_history.pop(key, None)
+
+        active_route_ids = set(self.route_live_context.keys())
+        active_route_stop_keys = set(self.stop_live_context.keys())
+        for history_map in (
+            self.route_delay_history,
+            self.route_slowdown_history,
+            self.route_headway_irregularity_history,
+            self.route_bunching_history,
+        ):
+            stale_route_history_keys = [
+                key for key in history_map if key not in active_route_ids
+            ]
+            for key in stale_route_history_keys:
+                history_map.pop(key, None)
+
+        stale_stop_arrival_keys = [
+            key for key in self.stop_arrival_history if key not in active_route_stop_keys
+        ]
+        for key in stale_stop_arrival_keys:
+            self.stop_arrival_history.pop(key, None)
+
     def refresh_vehicle_positions(self) -> dict[str, int | bool | str | None]:
         with self._refresh_lock:
             now = int(time.time())
             with self._state_lock:
                 self.last_refresh_time = now
+                self._evict_stale_state(now)
 
             unmatched_vehicle_ids: set[str] = set()
             unmatched_trip_ids: set[str] = set()
