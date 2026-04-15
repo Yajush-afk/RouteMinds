@@ -8,10 +8,12 @@ class RouteMindsException(Exception):
         message: str,
         status_code: int = 500,
         headers: dict[str, str] | None = None,
+        reason_code: str | None = None,
     ):
         self.message = message
         self.status_code = status_code
         self.headers = headers or {}
+        self.reason_code = reason_code
         super().__init__(self.message)
 
 
@@ -49,16 +51,25 @@ class GTFSRealtimeException(RouteMindsException):
 
 
 class AuthConfigurationException(RouteMindsException):
-    def __init__(self, message: str):
-        super().__init__(message=message, status_code=503)
+    def __init__(self, message: str, reason_code: str | None = None):
+        super().__init__(
+            message=message,
+            status_code=503,
+            reason_code=reason_code,
+        )
 
 
 class AuthenticationException(RouteMindsException):
-    def __init__(self, message: str = "Authentication credentials were not provided."):
+    def __init__(
+        self,
+        message: str = "Authentication credentials were not provided.",
+        reason_code: str | None = None,
+    ):
         super().__init__(
             message=message,
             status_code=401,
             headers={"WWW-Authenticate": "Bearer"},
+            reason_code=reason_code,
         )
 
 

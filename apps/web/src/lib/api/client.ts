@@ -62,45 +62,33 @@ export async function apiFetch<T>(
     })
   }
 
+  async function readErrorPayload(response: Response) {
+    try {
+      return await response.json()
+    } catch {
+      return null
+    }
+  }
+
   let response = await performRequest()
   let payload: unknown = null
+  let hasRetriedAfterRefresh = false
 
-  if (!response.ok) {
-    try {
-      payload = await response.json()
-    } catch {
-      payload = null
-    }
+  while (!response.ok) {
+    payload = await readErrorPayload(response)
 
-    const message = extractErrorMessage(
-      payload,
-      `Request failed with status ${response.status}.`
-    )
-
-    if (
-      auth &&
-      response.status === 401 &&
-      message === "Invalid or expired Supabase access token."
-    ) {
+    if (auth && response.status === 401 && !hasRetriedAfterRefresh) {
+      hasRetriedAfterRefresh = true
       response = await performRequest({ forceRefresh: true })
-
-      if (!response.ok) {
-        try {
-          payload = await response.json()
-        } catch {
-          payload = null
-        }
-
-        throw new Error(
-          extractErrorMessage(
-            payload,
-            `Request failed with status ${response.status}.`
-          )
-        )
-      }
-    } else {
-      throw new Error(message)
+      continue
     }
+
+    throw new Error(
+      extractErrorMessage(
+        payload,
+        `Request failed with status ${response.status}.`
+      )
+    )
   }
 
   return (await response.json()) as T

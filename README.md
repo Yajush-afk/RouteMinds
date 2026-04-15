@@ -417,7 +417,7 @@ SUPABASE_AUTH_ENABLED=true
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_JWT_ISSUER=https://your-project-ref.supabase.co/auth/v1
 SUPABASE_JWT_AUDIENCE=authenticated
-SUPABASE_JWT_ALGORITHMS=RS256
+SUPABASE_JWT_ALGORITHMS=ES256,RS256
 SUPABASE_REALTIME_REQUIRED_PERMISSION=realtime:manage
 CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
@@ -426,7 +426,7 @@ Recommended production values:
 
 - set `SUPABASE_AUTH_ENABLED=true`
 - use the production Supabase project origin consistently in both `SUPABASE_URL` and `SUPABASE_JWT_ISSUER`
-- keep `SUPABASE_JWT_ALGORITHMS=RS256` unless the project is explicitly configured otherwise
+- keep `SUPABASE_JWT_ALGORITHMS` aligned with the project signing key type; `ES256,RS256` is a safe default for asymmetric Supabase projects
 - set `CORS_ALLOW_ORIGINS` only to your deployed frontend origins
 - do not leave localhost origins in production
 

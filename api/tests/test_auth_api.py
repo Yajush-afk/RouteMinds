@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import base64
 import unittest
 import asyncio
+import json
 from unittest.mock import MagicMock, patch
 
 import httpx
-from jwt.exceptions import ExpiredSignatureError, InvalidAudienceError, InvalidIssuerError
+from jwt.exceptions import (
+    ExpiredSignatureError,
+    InvalidAudienceError,
+    InvalidIssuerError,
+    PyJWKClientError,
+)
 from starlette.requests import Request
 
 from api.app.core.auth import (
@@ -161,6 +168,23 @@ class StubRealtimeApiService:
             "last_refresh_successful": True,
             "last_refresh_error": None,
         }
+
+
+def _encode_jwt_segment(payload: dict[str, object]) -> str:
+    return base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    ).decode("utf-8").rstrip("=")
+
+
+def make_test_token(claims: dict[str, object]) -> str:
+    header = {"alg": "RS256", "kid": "test-kid", "typ": "JWT"}
+    return ".".join(
+        [
+            _encode_jwt_segment(header),
+            _encode_jwt_segment(claims),
+            _encode_jwt_segment({"sig": "test"}),
+        ]
+    )
 
 
 class AuthDependencyTests(unittest.TestCase):
@@ -342,11 +366,15 @@ class AuthDependencyTests(unittest.TestCase):
 
         with patch(
             "api.app.core.auth.get_auth_verifier",
-            side_effect=AuthConfigurationException("Unable to retrieve Supabase signing keys."),
+            side_effect=AuthConfigurationException(
+                "Unable to retrieve Supabase signing keys.",
+                reason_code="jwks_fetch_failed",
+            ),
         ):
             with self.assertRaises(AuthConfigurationException) as context:
                     asyncio.run(require_auth(request))
         self.assertEqual(context.exception.status_code, 503)
+        self.assertEqual(context.exception.reason_code, "jwks_fetch_failed")
 
     def test_supabase_verifier_rejects_invalid_audience(self) -> None:
         settings.SUPABASE_URL = "https://project.supabase.co"
@@ -365,6 +393,7 @@ class AuthDependencyTests(unittest.TestCase):
                     verifier.verify_token("test-token")
 
         self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.reason_code, "invalid_audience")
 
     def test_supabase_verifier_rejects_invalid_issuer(self) -> None:
         settings.SUPABASE_URL = "https://project.supabase.co"
@@ -383,6 +412,7 @@ class AuthDependencyTests(unittest.TestCase):
                     verifier.verify_token("test-token")
 
         self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.reason_code, "invalid_issuer")
 
     def test_supabase_verifier_rejects_expired_tokens(self) -> None:
         settings.SUPABASE_URL = "https://project.supabase.co"
@@ -401,23 +431,52 @@ class AuthDependencyTests(unittest.TestCase):
                     verifier.verify_token("test-token")
 
         self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.reason_code, "token_expired")
+
+    def test_supabase_verifier_rejects_missing_signing_key_as_auth_failure(self) -> None:
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        verifier = get_auth_verifier()
+
+        with patch("api.app.core.auth.get_jwks_client") as get_jwks_client_mock:
+            get_jwks_client_mock.return_value.get_signing_key_from_jwt.side_effect = (
+                PyJWKClientError("Unable to find a signing key that matches: test-kid")
+            )
+
+            with self.assertRaises(AuthenticationException) as context:
+                verifier.verify_token("test-token")
+
+        self.assertEqual(context.exception.status_code, 401)
+        self.assertEqual(context.exception.reason_code, "signing_key_not_found")
 
     def test_require_auth_logs_invalid_access_token_failures(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = True
         settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_ISSUER = "https://project.supabase.co/auth/v1"
         settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        invalid_token = make_test_token(
+            {
+                "iss": "https://project.supabase.co/auth/v1",
+                "aud": "authenticated",
+                "sub": "user-123",
+                "role": "authenticated",
+                "session_id": "session-123",
+                "exp": 9999999999,
+            }
+        )
         request = Request(
             {
                 "type": "http",
                 "method": "GET",
                 "path": "/api/v1/auth/me",
-                "headers": [(b"authorization", b"Bearer invalid-token")],
+                "headers": [(b"authorization", f"Bearer {invalid_token}".encode())],
             }
         )
 
         verifier = MagicMock()
         verifier.verify_token.side_effect = AuthenticationException(
-            "Invalid or expired Supabase access token."
+            "Invalid or expired Supabase access token.",
+            reason_code="invalid_audience",
         )
 
         with patch("api.app.core.auth.get_auth_verifier", return_value=verifier):
@@ -426,31 +485,95 @@ class AuthDependencyTests(unittest.TestCase):
                     asyncio.run(require_auth(request))
 
         logger_mock.warning.assert_called_once()
-        self.assertIn("invalid_or_expired_access_token", logger_mock.warning.call_args[0][1])
+        logged_message = logger_mock.warning.call_args[0][1]
+        self.assertIn("invalid_or_expired_access_token", logged_message)
+        self.assertIn("reason_code=invalid_audience", logged_message)
+        self.assertIn("expected_issuer=https://project.supabase.co/auth/v1", logged_message)
+        self.assertIn("expected_audience=authenticated", logged_message)
+        self.assertIn("token_kid=test-kid", logged_message)
+        self.assertIn("token_sub=user-123", logged_message)
 
-    def test_require_auth_logs_jwks_or_config_failures(self) -> None:
+    def test_require_auth_logs_missing_session_id_claim_failures(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = True
         settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_ISSUER = "https://project.supabase.co/auth/v1"
         settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        token_without_session = make_test_token(
+            {
+                "iss": "https://project.supabase.co/auth/v1",
+                "aud": "authenticated",
+                "sub": "user-123",
+                "role": "authenticated",
+                "exp": 9999999999,
+            }
+        )
         request = Request(
             {
                 "type": "http",
                 "method": "GET",
                 "path": "/api/v1/auth/me",
-                "headers": [(b"authorization", b"Bearer test-token")],
+                "headers": [(b"authorization", f"Bearer {token_without_session}".encode())],
+            }
+        )
+        verifier = MagicMock()
+        verifier.verify_token.return_value = {
+            "iss": "https://project.supabase.co/auth/v1",
+            "aud": "authenticated",
+            "sub": "user-123",
+            "role": "authenticated",
+        }
+
+        with patch("api.app.core.auth.get_auth_verifier", return_value=verifier):
+            with patch("api.app.core.auth.logger") as logger_mock:
+                with self.assertRaises(AuthenticationException) as context:
+                    asyncio.run(require_auth(request))
+
+        self.assertEqual(context.exception.reason_code, "missing_session_id")
+        logger_mock.warning.assert_called_once()
+        logged_message = logger_mock.warning.call_args[0][1]
+        self.assertIn("reason_code=missing_session_id", logged_message)
+        self.assertIn("token_session_id_present=false", logged_message)
+
+    def test_require_auth_logs_jwks_or_config_failures(self) -> None:
+        settings.SUPABASE_AUTH_ENABLED = True
+        settings.SUPABASE_URL = "https://project.supabase.co"
+        settings.SUPABASE_JWT_ISSUER = "https://project.supabase.co/auth/v1"
+        settings.SUPABASE_JWT_AUDIENCE = "authenticated"
+        token = make_test_token(
+            {
+                "iss": "https://project.supabase.co/auth/v1",
+                "aud": "authenticated",
+                "sub": "user-123",
+                "role": "authenticated",
+                "session_id": "session-123",
+                "exp": 9999999999,
+            }
+        )
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/auth/me",
+                "headers": [(b"authorization", f"Bearer {token}".encode())],
             }
         )
 
         with patch(
             "api.app.core.auth.get_auth_verifier",
-            side_effect=AuthConfigurationException("Unable to retrieve Supabase signing keys."),
+            side_effect=AuthConfigurationException(
+                "Unable to retrieve Supabase signing keys.",
+                reason_code="jwks_fetch_failed",
+            ),
         ):
             with patch("api.app.core.auth.logger") as logger_mock:
                 with self.assertRaises(AuthConfigurationException):
                     asyncio.run(require_auth(request))
 
         logger_mock.warning.assert_called_once()
-        self.assertIn("auth_configuration_or_jwks_failure", logger_mock.warning.call_args[0][1])
+        logged_message = logger_mock.warning.call_args[0][1]
+        self.assertIn("auth_configuration_or_jwks_failure", logged_message)
+        self.assertIn("reason_code=jwks_fetch_failed", logged_message)
+        self.assertIn("token_kid=test-kid", logged_message)
 
     def test_require_realtime_access_rejects_missing_permission(self) -> None:
         settings.SUPABASE_AUTH_ENABLED = True
@@ -770,6 +893,19 @@ class PublicApiAuthBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refresh_response.status_code, 200)
         self.assertEqual(status_response.status_code, 200)
         self.assertTrue(status_response.json()["configured"])
+
+    async def test_realtime_status_returns_403_for_missing_permission(self) -> None:
+        def deny_realtime_access():
+            raise AuthorizationException(
+                "You do not have permission to access realtime operational endpoints."
+            )
+
+        app.dependency_overrides[require_realtime_access] = deny_realtime_access
+
+        response = await self._request("GET", "/api/v1/realtime/status")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("permission", response.json()["detail"].lower())
 
 
 if __name__ == "__main__":
