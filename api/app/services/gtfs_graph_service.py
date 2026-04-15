@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import difflib
 import math
+import re
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass
@@ -378,3 +380,111 @@ class GTFSGraphService:
             }
             for stop in nearest_stops
         ]
+
+    def search_stops(
+        self,
+        query: str,
+        *,
+        limit: int = 8,
+    ) -> list[dict[str, str | float]]:
+        normalized_query = self._normalize_stop_search_text(query)
+        if not normalized_query:
+            return []
+
+        query_tokens = tuple(token for token in normalized_query.split(" ") if token)
+        graph = self.get_graph()
+        stop_usage_counts = self._build_stop_usage_counts(graph)
+        scored_matches: list[tuple[float, StopNode]] = []
+
+        for stop in graph.stops_by_id.values():
+            normalized_stop_name = self._normalize_stop_search_text(stop.stop_name)
+            score = self._stop_search_score(
+                normalized_query=normalized_query,
+                query_tokens=query_tokens,
+                normalized_stop_name=normalized_stop_name,
+                popularity_weight=stop_usage_counts.get(stop.stop_id, 0),
+            )
+            if score <= 0.0:
+                continue
+            scored_matches.append((score, stop))
+
+        scored_matches.sort(
+            key=lambda item: (-item[0], item[1].stop_name.lower(), item[1].stop_id)
+        )
+        return [
+            {
+                "stop_id": stop.stop_id,
+                "stop_name": stop.stop_name,
+                "stop_lat": stop.stop_lat,
+                "stop_lon": stop.stop_lon,
+                "match_score": score,
+            }
+            for score, stop in scored_matches[: max(1, limit)]
+        ]
+
+    @staticmethod
+    def _normalize_stop_search_text(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+        normalized = re.sub(r"\s+", " ", normalized)
+        aliases = {
+            "stn": "station",
+            "stn ": "station ",
+            "term": "terminal",
+            "term ": "terminal ",
+            "sec": "sector",
+            "sec ": "sector ",
+            "depo": "depot",
+            "dtc": "bus",
+            "isbt": "inter state bus terminal",
+        }
+        for source, target in aliases.items():
+            normalized = normalized.replace(source, target)
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    @staticmethod
+    def _build_stop_usage_counts(graph: StaticTransitGraph) -> dict[str, int]:
+        usage_counts: dict[str, int] = {stop_id: 0 for stop_id in graph.stops_by_id}
+        for edge in graph.edges:
+            usage_counts[edge.from_stop_id] = usage_counts.get(edge.from_stop_id, 0) + 1
+            usage_counts[edge.to_stop_id] = usage_counts.get(edge.to_stop_id, 0) + 1
+        return usage_counts
+
+    @staticmethod
+    def _stop_search_score(
+        *,
+        normalized_query: str,
+        query_tokens: tuple[str, ...],
+        normalized_stop_name: str,
+        popularity_weight: int,
+    ) -> float:
+        if not normalized_stop_name:
+            return 0.0
+        if normalized_stop_name == normalized_query:
+            textual_score = 100.0
+        elif normalized_stop_name.startswith(normalized_query):
+            textual_score = 80.0 - (len(normalized_stop_name) - len(normalized_query)) * 0.01
+        elif normalized_query in normalized_stop_name:
+            textual_score = 60.0 - normalized_stop_name.index(normalized_query) * 0.1
+        else:
+            stop_tokens = set(normalized_stop_name.split(" "))
+            matched_tokens = sum(1 for token in query_tokens if token in stop_tokens)
+            token_coverage_score = 0.0
+            if matched_tokens > 0:
+                token_coverage_score = 30.0 * (matched_tokens / max(1, len(query_tokens)))
+
+            fuzzy_ratio = difflib.SequenceMatcher(
+                None,
+                normalized_query,
+                normalized_stop_name,
+            ).ratio()
+            fuzzy_score = 0.0
+            if fuzzy_ratio >= 0.72:
+                fuzzy_score = 35.0 * fuzzy_ratio
+
+            textual_score = max(token_coverage_score, fuzzy_score)
+
+        if textual_score <= 0.0:
+            return 0.0
+
+        popularity_bonus = min(8.0, math.log1p(max(0, popularity_weight)) * 1.5)
+        return textual_score + popularity_bonus
