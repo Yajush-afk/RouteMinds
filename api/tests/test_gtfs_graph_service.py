@@ -84,6 +84,9 @@ class GTFSGraphServiceTests(unittest.TestCase):
                 ["TRIP_1", "08:10:00", "08:10:00", "STOP_C", "2"],
                 ["TRIP_1", "08:00:00", "08:00:00", "STOP_A", "0"],
                 ["TRIP_1", "08:05:00", "08:05:00", "STOP_B", "1"],
+                ["TRIP_2", "09:10:00", "09:10:00", "STOP_D", "2"],
+                ["TRIP_2", "09:00:00", "09:00:00", "STOP_A", "0"],
+                ["TRIP_2", "09:05:00", "09:05:00", "STOP_C", "1"],
             ],
         )
 
@@ -92,7 +95,7 @@ class GTFSGraphServiceTests(unittest.TestCase):
 
         self.assertEqual(graph.edge_count, 4)
         outgoing = graph.get_outgoing_edges("STOP_A")
-        self.assertEqual(len(outgoing), 1)
+        self.assertEqual(len(outgoing), 2)
         self.assertEqual(outgoing[0].to_stop_id, "STOP_B")
         self.assertEqual(outgoing[0].scheduled_departure_seconds, (8 * 3600,))
 
@@ -119,8 +122,8 @@ class GTFSGraphServiceTests(unittest.TestCase):
         results = service.search_stops("narela sec 5", limit=3)
 
         self.assertGreaterEqual(len(results), 2)
-        self.assertEqual(results[0]["stop_id"], "STOP_C")
-        self.assertEqual(results[1]["stop_id"], "STOP_D")
+        self.assertEqual(results[0]["stop_id"], "STOP_D")
+        self.assertEqual(results[1]["stop_id"], "STOP_C")
 
     def test_stop_search_handles_fuzzy_queries(self) -> None:
         service = GTFSGraphService(self.gtfs_dir)
