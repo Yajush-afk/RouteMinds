@@ -1,18 +1,7 @@
-import { useMapPlacementState } from "@/features/map/hooks/useMapPlacementState"
-import { useMapSearchState } from "@/features/map/hooks/useMapSearchState"
+import { useMultiStopRoutePlanner } from "@/features/map/hooks/useMultiStopRoutePlanner"
 
 export function useMapScreenState() {
-  const placementState = useMapPlacementState()
-
-  const searchState = useMapSearchState({
-    onOriginSelect: placementState.handleOriginSelect,
-    onDestinationSelect: placementState.handleDestinationSelect,
-  })
-
-  return {
-    mapViewportProps: placementState.mapViewportProps,
-    searchPanelProps: searchState.searchPanelProps,
-  }
+  return useMultiStopRoutePlanner()
 }
 
 export default useMapScreenState

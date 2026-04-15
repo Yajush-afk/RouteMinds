@@ -1,6 +1,8 @@
 import { getApiBaseUrl } from "@/lib/api/config"
 
-type AccessTokenFactory = () => Promise<string>
+type AccessTokenFactory = (options?: {
+  forceRefresh?: boolean
+}) => Promise<string>
 
 type ApiRequestOptions = RequestInit & {
   auth?: boolean
@@ -38,41 +40,67 @@ export async function apiFetch<T>(
   path: string,
   { auth = false, headers, ...init }: ApiRequestOptions = {}
 ): Promise<T> {
-  const requestHeaders = new Headers(headers)
+  async function performRequest(options?: { forceRefresh?: boolean }) {
+    const requestHeaders = new Headers(headers)
 
-  if (auth) {
-    if (!accessTokenFactory) {
-      throw new Error("Authenticated API access is not available.")
+    if (auth) {
+      if (!accessTokenFactory) {
+        throw new Error("Authenticated API access is not available.")
+      }
+
+      const token = await accessTokenFactory(options)
+      requestHeaders.set("Authorization", `Bearer ${token}`)
     }
 
-    const token = await accessTokenFactory()
-    requestHeaders.set("Authorization", `Bearer ${token}`)
+    if (init.body && !requestHeaders.has("Content-Type")) {
+      requestHeaders.set("Content-Type", "application/json")
+    }
+
+    return fetch(resolveUrl(path), {
+      ...init,
+      headers: requestHeaders,
+    })
   }
 
-  if (init.body && !requestHeaders.has("Content-Type")) {
-    requestHeaders.set("Content-Type", "application/json")
-  }
-
-  const response = await fetch(resolveUrl(path), {
-    ...init,
-    headers: requestHeaders,
-  })
+  let response = await performRequest()
+  let payload: unknown = null
 
   if (!response.ok) {
-    let payload: unknown = null
-
     try {
       payload = await response.json()
     } catch {
       payload = null
     }
 
-    throw new Error(
-      extractErrorMessage(
-        payload,
-        `Request failed with status ${response.status}.`
-      )
+    const message = extractErrorMessage(
+      payload,
+      `Request failed with status ${response.status}.`
     )
+
+    if (
+      auth &&
+      response.status === 401 &&
+      message === "Invalid or expired Supabase access token."
+    ) {
+      response = await performRequest({ forceRefresh: true })
+
+      if (!response.ok) {
+        try {
+          payload = await response.json()
+        } catch {
+          payload = null
+        }
+
+        throw new Error(
+          extractErrorMessage(
+            payload,
+            `Request failed with status ${response.status}.`
+          )
+        )
+      }
+    } else {
+      throw new Error(message)
+    }
   }
 
   return (await response.json()) as T

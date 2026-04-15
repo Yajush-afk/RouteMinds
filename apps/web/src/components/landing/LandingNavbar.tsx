@@ -98,7 +98,11 @@ function NavbarAuthAction({ mobile = false }: { mobile?: boolean }) {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="w-36">
-        <DropdownMenuItem onClick={logout}>
+        <DropdownMenuItem
+          onClick={() => {
+            void logout()
+          }}
+        >
           <LogOut className="size-4" />
           Log out
         </DropdownMenuItem>

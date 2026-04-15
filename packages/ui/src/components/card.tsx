@@ -11,7 +11,7 @@ const cardVariants = cva(
         default: "",
         muted: "bg-muted/60",
         glass: "surface-glass bg-card/70",
-        dark: "border-white/12 bg-zinc-950/72 text-white shadow-lift",
+        dark: "shadow-lift border-white/12 bg-zinc-950/72 text-white",
       },
       padding: {
         none: "p-0",
@@ -92,12 +92,4 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-export {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  cardVariants,
-}
+export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }

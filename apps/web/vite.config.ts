@@ -7,6 +7,7 @@ import { defineConfig } from "vite"
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
+    chunkSizeWarningLimit: 1300,
     modulePreload: {
       resolveDependencies(_filename, deps, context) {
         if (context.hostType !== "html") {
@@ -14,7 +15,10 @@ export default defineConfig({
         }
 
         return deps.filter(
-          (dep) => !dep.includes("map-vendor") && !dep.includes("MapPage-")
+          (dep) =>
+            !dep.includes("maplibre-core") &&
+            !dep.includes("react-map-gl") &&
+            !dep.includes("MapPage-")
         )
       },
     },
@@ -25,8 +29,12 @@ export default defineConfig({
             return undefined
           }
 
-          if (id.includes("maplibre-gl") || id.includes("react-map-gl")) {
-            return "map-vendor"
+          if (id.includes("maplibre-gl")) {
+            return "maplibre-core"
+          }
+
+          if (id.includes("react-map-gl")) {
+            return "react-map-gl"
           }
 
           if (id.includes("/motion/") || id.includes("motion/react")) {

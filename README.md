@@ -86,7 +86,7 @@ The frontend is built with:
 Current routes:
 
 - `/`: landing page
-- `/auth`: Supabase sign-in page with Google OAuth and one-time codes
+- `/auth`: Supabase sign-in page with Google OAuth and one-time email codes
 - `/map`: protected map screen
 
 The map experience currently focuses on:

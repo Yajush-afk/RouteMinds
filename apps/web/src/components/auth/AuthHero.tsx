@@ -102,12 +102,12 @@ export default function AuthHero() {
           <h1 className="max-w-lg text-4xl leading-[1.02] font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
             One step in.
             <br />
-            <span className="text-[#e8c84a]">Phone, email, and done.</span>
+            <span className="text-[#e8c84a]">Email and done.</span>
           </h1>
           <p className="mt-6 max-w-md text-sm leading-7 text-[#d5d0c3] sm:text-base">
-            Use a one-time code to get into RouteMinds faster. No passwords,
-            no split between signing up and signing in, just one Delhi-ready
-            entry flow.
+            Use a one-time code to get into RouteMinds faster. No passwords, no
+            split between signing up and signing in, just one Delhi-ready entry
+            flow.
           </p>
         </div>
       </div>

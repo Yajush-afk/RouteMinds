@@ -9,7 +9,7 @@ import { cn } from "@workspace/ui/lib/utils"
 type SelectedLocationMarkerProps = {
   position: LngLat
   badge: string
-  tone: "origin" | "destination"
+  tone: "origin" | "destination" | "waypoint"
   variant?: "default" | "user-location"
 }
 
@@ -42,7 +42,11 @@ function SelectedLocationMarker({
         <span
           className={cn(
             "absolute -top-1 left-1/2 z-10 grid h-6 min-w-6 -translate-x-1/2 place-items-center rounded-full border-2 border-white px-1 text-[11px] font-semibold text-white shadow-md",
-            tone === "origin" ? "bg-sky-500" : "bg-rose-500"
+            tone === "origin"
+              ? "bg-sky-500"
+              : tone === "destination"
+                ? "bg-rose-500"
+                : "bg-amber-500"
           )}
         >
           {badge}
