@@ -31,7 +31,6 @@ export async function searchStops(
   })
 
   const response = await apiFetch<StopSearchResponse>(`/stops/search?${params}`, {
-    auth: true,
     signal: options.signal,
   })
 

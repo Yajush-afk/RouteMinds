@@ -31,7 +31,6 @@ async def get_nearby_stops(
 async def search_stops(
     q: str = Query(..., min_length=2, max_length=120),
     limit: int = Query(8, ge=1, le=20),
-    _claims: dict = Depends(require_auth),
 ) -> StopSearchResponse:
     graph_service = get_gtfs_graph_service()
     return StopSearchResponse(stops=graph_service.search_stops(q, limit=limit))

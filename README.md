@@ -157,6 +157,7 @@ The FastAPI app exposes the following routes under `/api/v1`:
 - `GET /api/v1/health`
 - `POST /api/v1/predictions/segments`
 - `GET /api/v1/stops/nearby`
+- `GET /api/v1/stops/search`
 - `POST /api/v1/routes/optimize`
 - `POST /api/v1/realtime/refresh`
 - `GET /api/v1/realtime/status`
@@ -164,7 +165,7 @@ The FastAPI app exposes the following routes under `/api/v1`:
 There is also a root route at `GET /` that returns app metadata and a docs pointer.
 
 The backend also exposes unversioned aliases for the current API surface such as
-`/auth/me`, `/health`, `/stops/nearby`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
+`/auth/me`, `/health`, `/stops/nearby`, `/stops/search`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
 
 ### Authentication Contract
 
@@ -173,6 +174,7 @@ The current backend authentication contract is:
 - authenticated: `GET /auth/me`, `GET /api/v1/auth/me`
 - public: `GET /health`, `GET /api/v1/health`
 - public: `POST /predictions/segments`, `POST /api/v1/predictions/segments`
+- public: `GET /stops/search`, `GET /api/v1/stops/search`
 - authenticated: `GET /stops/nearby`, `GET /api/v1/stops/nearby`
 - authenticated: `POST /routes/optimize`, `POST /api/v1/routes/optimize`
 - authenticated plus `realtime:manage`: `GET /realtime/status`, `GET /api/v1/realtime/status`

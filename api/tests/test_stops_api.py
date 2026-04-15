@@ -69,10 +69,10 @@ class StopsApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 401)
 
-    async def test_stop_search_endpoint_requires_authentication(self) -> None:
+    async def test_stop_search_endpoint_is_public(self) -> None:
         response = await self._request("/api/v1/stops/search?q=narela")
 
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)
 
     async def test_nearby_stops_endpoint_returns_nearest_stops(self) -> None:
         app.dependency_overrides[require_auth] = lambda: {
@@ -93,12 +93,6 @@ class StopsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["stops"][0]["stop_id"], "STOP_A")
 
     async def test_stop_search_endpoint_returns_ranked_results(self) -> None:
-        app.dependency_overrides[require_auth] = lambda: {
-            "sub": "6c0a1808-4a95-4c21-85a8-44fa17c22d11",
-            "role": "authenticated",
-            "session_id": "6734ed6d-5101-4c88-958f-8eb6e2e27daf",
-        }
-
         with patch(
             "api.app.api.v1.stops.get_gtfs_graph_service",
             return_value=StubStopsGraphService(),
@@ -110,6 +104,17 @@ class StopsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload["stops"]), 2)
         self.assertEqual(payload["stops"][0]["stop_id"], "STOP_A")
         self.assertGreater(payload["stops"][0]["match_score"], payload["stops"][1]["match_score"])
+
+    async def test_unversioned_stop_search_alias_is_public(self) -> None:
+        with patch(
+            "api.app.api.v1.stops.get_gtfs_graph_service",
+            return_value=StubStopsGraphService(),
+        ):
+            response = await self._request("/stops/search?q=narela&limit=2")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["stops"]), 2)
 
 
 if __name__ == "__main__":
