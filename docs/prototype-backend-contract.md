@@ -28,8 +28,8 @@ The prototype does not require backend-generated geometry.
 
 Frontend route drawing should use:
 
-- the ordered `stops` array in the route response
-- each stop's `stop_lat` and `stop_lon`
+- the ordered `route_path_coordinates` array in the route response
+- or, if preferred, the ordered `stops` array and each stop's `stop_lat` / `stop_lon`
 
 This means the first route visualization is a stop-to-stop polyline. That is
 acceptable for the prototype and avoids unnecessary backend geometry work.
@@ -56,6 +56,7 @@ Frontend may rely on these top-level route fields:
 - `selection_reasons`
 - `explanation_summary`
 - `cost_breakdown`
+- `route_path_coordinates`
 - `alternatives`
 
 Frontend may rely on these segment fields:

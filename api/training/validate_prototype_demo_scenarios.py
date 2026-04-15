@@ -14,8 +14,9 @@ from api.app.services.route_optimization_service import RouteOptimizationService
 from api.training.config import resolve_repo_path
 
 DEFAULT_OUTPUT_PATH = "artifacts/metrics/prototype_demo_scenarios.json"
-MAX_SEARCH_ORIGINS = 60
-MAX_DESTINATIONS_PER_ORIGIN = 40
+MAX_SEARCH_ORIGINS = 12
+MAX_DESTINATIONS_PER_ORIGIN = 12
+MAX_TRANSFER_SEARCH_SECONDS = 8.0
 
 
 def _segment_to_stop_payload(stop: StopNode) -> dict[str, Any]:
@@ -157,13 +158,18 @@ def validate_prototype_demo_scenarios(output_path: str | Path = DEFAULT_OUTPUT_P
     transfer_result = None
     transfer_origin_stop_id = None
     transfer_destination_stop_id = None
+    transfer_search_started_at = time.monotonic()
     candidate_origins = list(graph.edges_from_stop.keys())[:MAX_SEARCH_ORIGINS]
     for origin_stop_id in candidate_origins:
+        if (time.monotonic() - transfer_search_started_at) > MAX_TRANSFER_SEARCH_SECONDS:
+            break
         for destination_stop_id in _candidate_destinations(
             graph_service,
             origin_stop_id,
             max_destinations=MAX_DESTINATIONS_PER_ORIGIN,
         ):
+            if (time.monotonic() - transfer_search_started_at) > MAX_TRANSFER_SEARCH_SECONDS:
+                break
             try:
                 candidate_result = route_service.optimize_route(
                     origin_stop_id,
@@ -213,6 +219,7 @@ def validate_prototype_demo_scenarios(output_path: str | Path = DEFAULT_OUTPUT_P
         "route_drawing_contract": "Frontend should draw prototype route polylines using ordered stop coordinates from the route response.",
         "stop_resolution_contract": "Frontend should resolve each selected place through /stops/nearby and use the nearest returned stop for the prototype.",
         "scenario_count": len(scenarios),
+        "transfer_scenario_found": transfer_result is not None,
         "scenarios": scenarios,
     }
     resolved_output_path = resolve_repo_path(output_path)

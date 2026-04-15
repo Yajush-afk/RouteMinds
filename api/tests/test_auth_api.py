@@ -104,6 +104,10 @@ class StubRouteOptimizationApiService:
                     "Chosen for the lowest generalized cost balancing ETA, wait time, and risk."
                 ],
                 "explanation_summary": "Chosen for the lowest generalized cost balancing ETA, wait time, and risk.",
+                "route_path_coordinates": [
+                    {"stop_id": str(origin_stop_id), "lat": 28.70, "lon": 77.10},
+                    {"stop_id": str(destination_stop_id), "lat": 28.71, "lon": 77.11},
+                ],
                 "cost_breakdown": {
                     "travel_time_cost": 4.5,
                     "waiting_time_cost": 0.0,
