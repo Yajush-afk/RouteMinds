@@ -712,6 +712,8 @@ class RouteOptimizationService:
         predictions: list[dict[str, float | str | bool] | None] = [None] * len(timeline)
         supported_indices: list[int] = []
         supported_records: list[dict[str, str | int | float]] = []
+        unsupported_indices: list[int] = []
+        unsupported_records: list[dict[str, str | int | float]] = []
 
         for index, timeline_item in enumerate(timeline):
             segment_record = timeline_item["segment_record"]
@@ -722,15 +724,8 @@ class RouteOptimizationService:
                 supported_records.append(segment_record)
                 continue
 
-            candidate_step = timeline_item["candidate_step"]
-            departure_timestamp = int(timeline_item["departure_timestamp"])
-            if not isinstance(candidate_step, CandidateStep):
-                raise TypeError("Candidate timeline item is missing a candidate step.")
-            predictions[index] = self._build_coarse_prediction(
-                edge=candidate_step.edge,
-                departure_timestamp=departure_timestamp,
-                segment_record=segment_record,
-            )
+            unsupported_indices.append(index)
+            unsupported_records.append(segment_record)
 
         if supported_records:
             supported_predictions = self.prediction_service.predict_segments(supported_records)
@@ -740,6 +735,39 @@ class RouteOptimizationService:
                 strict=True,
             ):
                 predictions[index] = prediction
+
+        if unsupported_records:
+            predict_unsupported = getattr(
+                self.prediction_service,
+                "predict_segments_for_unsupported_edges",
+                None,
+            )
+            if callable(predict_unsupported):
+                unsupported_predictions = predict_unsupported(unsupported_records)
+                for index, prediction in zip(
+                    unsupported_indices,
+                    unsupported_predictions,
+                    strict=True,
+                ):
+                    predictions[index] = prediction
+            else:
+                for index, segment_record in zip(
+                    unsupported_indices,
+                    unsupported_records,
+                    strict=True,
+                ):
+                    timeline_item = timeline[index]
+                    candidate_step = timeline_item["candidate_step"]
+                    departure_timestamp = int(timeline_item["departure_timestamp"])
+                    if not isinstance(candidate_step, CandidateStep):
+                        raise TypeError(
+                            "Candidate timeline item is missing a candidate step."
+                        )
+                    predictions[index] = self._build_coarse_prediction(
+                        edge=candidate_step.edge,
+                        departure_timestamp=departure_timestamp,
+                        segment_record=segment_record,
+                    )
 
         return [
             prediction
