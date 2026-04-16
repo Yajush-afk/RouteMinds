@@ -123,27 +123,11 @@ function createIdleRouteLeg(
     totalEtaMinutes: 0,
     totalDelayMinutes: 0,
     waitMinutes: 0,
+    transferCount: 0,
     status,
     errorMessage: null,
     lineCoordinates: [],
   }
-}
-
-function getTransferCount(routeLegs: RouteLegPlan[]) {
-  let previousRouteId: string | null = null
-  let transferCount = 0
-
-  for (const leg of routeLegs) {
-    for (const segment of leg.segments) {
-      if (previousRouteId !== null && previousRouteId !== segment.routeId) {
-        transferCount += 1
-      }
-
-      previousRouteId = segment.routeId
-    }
-  }
-
-  return transferCount
 }
 
 export function useMultiStopRoutePlanner() {
@@ -294,11 +278,8 @@ export function useMultiStopRoutePlanner() {
                 total + segment.predictedSegmentDelayMinutes,
               0
             ),
-            waitMinutes: result.segments.reduce(
-              (total, segment) =>
-                total + segment.waitMinutesBeforeBoarding,
-              0
-            ),
+            waitMinutes: result.totalWaitMinutes,
+            transferCount: result.transferCount,
             status: "ready",
             lineCoordinates: [
               ...(result.stops[0]?.stopId !== baseLeg.fromStop.stopId
@@ -421,7 +402,10 @@ export function useMultiStopRoutePlanner() {
         routingResult.queryTimestampUnix + Math.round(totalEtaMinutes * 60),
       totalDelayMinutes,
       totalWaitMinutes,
-      transferCount: getTransferCount(readyLegs),
+      transferCount: readyLegs.reduce(
+        (total, leg) => total + leg.transferCount,
+        0
+      ),
     }
   }, [routeLegs, routingResult, selectedLegRequestKey])
 

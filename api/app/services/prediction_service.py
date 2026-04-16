@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from api.app.core.config import REPO_ROOT
 from api.app.core.exceptions import (
@@ -9,8 +13,15 @@ from api.app.core.exceptions import (
     PredictionRequestException,
 )
 from api.app.ml.predictor import SegmentTravelTimePredictor
+from api.training.config import load_training_config, resolve_repo_path
 
 MIN_PREDICTED_SEGMENT_MINUTES = 0.01
+DEFAULT_TRAINING_CONFIG_PATH = "api/training/config/default_config.toml"
+DEFAULT_ROUTE_EDGE_SUPPORT_PATH = (
+    "artifacts/models/xgboost_segment_travel_time_supported_edges.parquet"
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _clamp(value: float, lower: float, upper: float) -> float:
@@ -94,16 +105,103 @@ def resolve_app_path(value: str | Path) -> Path:
         return path
     return REPO_ROOT / path
 
+
+@lru_cache(maxsize=4)
+def load_supported_route_edges(
+    training_config_path: str | Path = DEFAULT_TRAINING_CONFIG_PATH,
+) -> frozenset[tuple[str, str, str]]:
+    support_path = resolve_app_path(DEFAULT_ROUTE_EDGE_SUPPORT_PATH)
+    if support_path.exists():
+        support_frame = pd.read_parquet(support_path)
+        return frozenset(
+            zip(
+                support_frame["route_id"].astype(str),
+                support_frame["from_stop_id"].astype(str),
+                support_frame["to_stop_id"].astype(str),
+            )
+        )
+
+    config = load_training_config(training_config_path)
+    dataset_path = resolve_repo_path(config.data.dataset_path)
+    columns = [
+        config.data.trip_id_column,
+        config.data.route_id_column,
+        config.data.stop_id_column,
+        config.data.stop_sequence_column,
+        config.data.scheduled_time_column,
+    ]
+
+    suffix = dataset_path.suffix.lower()
+    if suffix == ".csv" or config.data.file_format.lower() == "csv":
+        frame = pd.read_csv(dataset_path, usecols=columns)
+    elif suffix == ".parquet" or config.data.file_format.lower() == "parquet":
+        frame = pd.read_parquet(dataset_path, columns=columns)
+    else:
+        raise ValueError(
+            "Unsupported dataset format for loading model support edges. "
+            "Use CSV or Parquet."
+        )
+
+    frame = frame.sort_values(
+        [
+            config.data.trip_id_column,
+            config.data.stop_sequence_column,
+            config.data.scheduled_time_column,
+        ]
+    ).reset_index(drop=True)
+    frame["from_stop_id"] = frame.groupby(
+        config.data.trip_id_column,
+        sort=False,
+    )[config.data.stop_id_column].shift(1)
+    supported_segments = frame[frame["from_stop_id"].notna()]
+    return frozenset(
+        zip(
+            supported_segments[config.data.route_id_column].astype(str),
+            supported_segments["from_stop_id"].astype(str),
+            supported_segments[config.data.stop_id_column].astype(str),
+        )
+    )
+
 class PredictionService:
-    def __init__(self, model_path: str | Path, schema_path: str | Path):
+    def __init__(
+        self,
+        model_path: str | Path,
+        schema_path: str | Path,
+        training_config_path: str | Path = DEFAULT_TRAINING_CONFIG_PATH,
+    ):
         self.model_path = resolve_app_path(model_path)
         self.schema_path = resolve_app_path(schema_path)
+        self.training_config_path = str(training_config_path)
+        self._support_check_warning_emitted = False
         self.predictor = SegmentTravelTimePredictor(
             model_path=self.model_path,
             schema_path=self.schema_path,
         )
 
-    def predict_segments(self, segment_records: list[dict[str, Any]]) -> list[dict[str, float]]:
+    def supports_segment_record(self, segment_record: dict[str, Any]) -> bool:
+        try:
+            supported_route_edges = load_supported_route_edges(self.training_config_path)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            if not self._support_check_warning_emitted:
+                logger.warning(
+                    "Unable to load route-edge support set from training data; "
+                    "continuing without OOD protection: %s",
+                    exc,
+                )
+                self._support_check_warning_emitted = True
+            return True
+
+        route_edge_key = (
+            str(segment_record["route_id"]),
+            str(segment_record["from_stop_id"]),
+            str(segment_record["to_stop_id"]),
+        )
+        return route_edge_key in supported_route_edges
+
+    def predict_segments(
+        self,
+        segment_records: list[dict[str, Any]],
+    ) -> list[dict[str, float | str | bool]]:
         if not self.schema_path.exists():
             raise ModelArtifactMissingException("schema", str(self.schema_path))
         if not self.model_path.exists():
@@ -114,7 +212,7 @@ class PredictionService:
         except ValueError as exc:
             raise PredictionRequestException(str(exc)) from exc
 
-        predictions: list[dict[str, float]] = []
+        predictions: list[dict[str, float | str | bool]] = []
         for prediction, record in zip(travel_time_predictions, segment_records, strict=True):
             scheduled_segment_minutes = float(record["scheduled_segment_minutes"])
             predicted_actual_segment_minutes = max(
@@ -153,6 +251,8 @@ class PredictionService:
                     "predicted_eta_upper_minutes": (
                         predicted_actual_segment_minutes + segment_uncertainty
                     ),
+                    "prediction_source": "ml",
+                    "model_supported": True,
                 }
             )
 

@@ -61,6 +61,17 @@ function formatMinutes(value: number) {
   return `${value.toFixed(1)} min`
 }
 
+function formatScheduleDeviation(value: number) {
+  const absoluteDeviation = Math.abs(value)
+  if (absoluteDeviation < 1) {
+    return "On time"
+  }
+  if (value < 0) {
+    return `Early ${formatMinutes(absoluteDeviation)}`
+  }
+  return `Delayed ${formatMinutes(value)}`
+}
+
 function formatArrivalTime(timestamp: number | null) {
   if (timestamp === null) {
     return "Not available"
@@ -107,7 +118,9 @@ function getLegStatusLabel(leg: RouteLegPlan) {
     case "loading":
       return "Drawing route"
     case "ready":
-      return leg.totalDelayMinutes > 8
+      return leg.totalDelayMinutes <= -1
+        ? "Early"
+        : leg.totalDelayMinutes > 8
         ? "Heavy delay"
         : leg.totalDelayMinutes > 3
           ? "Moderate delay"
@@ -238,10 +251,10 @@ function MapRouteSidebar({
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                   <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                    Delay
+                    Schedule
                   </p>
                   <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-900">
-                    {summary ? formatMinutes(summary.totalDelayMinutes) : "--"}
+                    {summary ? formatScheduleDeviation(summary.totalDelayMinutes) : "--"}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
@@ -333,15 +346,17 @@ function MapRouteSidebar({
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
                         <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          Delay
+                          Schedule
                         </p>
                         <p className="mt-1.5 text-base font-semibold text-slate-900">
-                          {leg.status === "ready" ? formatMinutes(leg.totalDelayMinutes) : "--"}
+                          {leg.status === "ready"
+                            ? formatScheduleDeviation(leg.totalDelayMinutes)
+                            : "--"}
                         </p>
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
                         <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          Wait
+                          Boarding Wait
                         </p>
                         <p className="mt-1.5 text-base font-semibold text-slate-900">
                           {leg.status === "ready" ? formatMinutes(leg.waitMinutes) : "--"}
@@ -349,7 +364,7 @@ function MapRouteSidebar({
                       </div>
                       <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
                         <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          Routes
+                          Bus Routes
                         </p>
                         <p className="mt-1.5 line-clamp-2 text-sm font-medium text-slate-900">
                           {leg.status === "ready" && leg.segments.length > 0
@@ -362,7 +377,8 @@ function MapRouteSidebar({
                     {leg.status === "ready" ? (
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         <Clock3 className="size-3.5" />
-                        Drawn from {leg.responseStops.length} routed stop{leg.responseStops.length === 1 ? "" : "s"}.
+                        Path includes {leg.responseStops.length} routed stop
+                        {leg.responseStops.length === 1 ? "" : "s"}.
                       </div>
                     ) : null}
                   </CardContent>

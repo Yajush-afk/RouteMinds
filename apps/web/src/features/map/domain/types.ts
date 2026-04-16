@@ -49,6 +49,8 @@ export type RouteSegmentPrediction = {
   distanceToPrevStopKm: number
   scheduledSegmentMinutes: number
   waitMinutesBeforeBoarding: number
+  predictionSource: "ml" | "scheduled_fallback"
+  modelSupported: boolean
   predictedActualSegmentMinutes: number
   predictedSegmentDelayMinutes: number
 }
@@ -66,6 +68,7 @@ export type RouteLegPlan = {
   totalEtaMinutes: number
   totalDelayMinutes: number
   waitMinutes: number
+  transferCount: number
   status: RouteLegStatus
   errorMessage: string | null
   lineCoordinates: [number, number][]

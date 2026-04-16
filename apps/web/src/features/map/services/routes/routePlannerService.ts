@@ -22,10 +22,14 @@ type RouteOptimizationResponse = {
     distance_to_prev_stop_km: number
     scheduled_segment_minutes: number
     wait_minutes_before_boarding: number
+    prediction_source: "ml" | "scheduled_fallback"
+    model_supported: boolean
     predicted_actual_segment_minutes: number
     predicted_segment_delay_minutes: number
   }>
   total_predicted_eta_minutes: number
+  total_wait_minutes: number
+  transfer_count: number
 }
 
 const ROUTE_REQUEST_TIMEOUT_MS = 35_000
@@ -50,6 +54,8 @@ export type RouteOptimizationResult = {
   stops: RouteStop[]
   segments: RouteSegmentPrediction[]
   totalPredictedEtaMinutes: number
+  totalWaitMinutes: number
+  transferCount: number
 }
 
 export async function optimizeRoute(
@@ -93,10 +99,14 @@ export async function optimizeRoute(
         distanceToPrevStopKm: segment.distance_to_prev_stop_km,
         scheduledSegmentMinutes: segment.scheduled_segment_minutes,
         waitMinutesBeforeBoarding: segment.wait_minutes_before_boarding,
+        predictionSource: segment.prediction_source,
+        modelSupported: segment.model_supported,
         predictedActualSegmentMinutes: segment.predicted_actual_segment_minutes,
         predictedSegmentDelayMinutes: segment.predicted_segment_delay_minutes,
       })),
       totalPredictedEtaMinutes: response.total_predicted_eta_minutes,
+      totalWaitMinutes: response.total_wait_minutes,
+      transferCount: response.transfer_count,
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError" && !options.signal?.aborted) {

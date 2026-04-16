@@ -557,9 +557,7 @@ class RouteOptimizationService:
             candidate_path,
             query_timestamp_unix=query_timestamp_unix,
         )
-        initial_predictions = self.prediction_service.predict_segments(
-            [item["segment_record"] for item in initial_timeline]
-        )
+        initial_predictions = self._predict_timeline_segments(initial_timeline)
         predicted_travel_minutes_by_index = {
             index: max(
                 float(prediction["predicted_actual_segment_minutes"]),
@@ -572,9 +570,7 @@ class RouteOptimizationService:
             query_timestamp_unix=query_timestamp_unix,
             predicted_travel_minutes_by_index=predicted_travel_minutes_by_index,
         )
-        final_predictions = self.prediction_service.predict_segments(
-            [item["segment_record"] for item in final_timeline]
-        )
+        final_predictions = self._predict_timeline_segments(final_timeline)
 
         for timeline_item, prediction in zip(final_timeline, final_predictions, strict=True):
             candidate_step = timeline_item["candidate_step"]
@@ -696,6 +692,61 @@ class RouteOptimizationService:
 
         return timeline
 
+    def _prediction_service_supports_segment_record(
+        self,
+        segment_record: dict[str, str | int | float],
+    ) -> bool:
+        supports_segment_record = getattr(
+            self.prediction_service,
+            "supports_segment_record",
+            None,
+        )
+        if not callable(supports_segment_record):
+            return True
+        return bool(supports_segment_record(segment_record))
+
+    def _predict_timeline_segments(
+        self,
+        timeline: list[dict[str, object]],
+    ) -> list[dict[str, float | str | bool]]:
+        predictions: list[dict[str, float | str | bool] | None] = [None] * len(timeline)
+        supported_indices: list[int] = []
+        supported_records: list[dict[str, str | int | float]] = []
+
+        for index, timeline_item in enumerate(timeline):
+            segment_record = timeline_item["segment_record"]
+            if not isinstance(segment_record, dict):
+                raise TypeError("Candidate timeline item is missing a segment record.")
+            if self._prediction_service_supports_segment_record(segment_record):
+                supported_indices.append(index)
+                supported_records.append(segment_record)
+                continue
+
+            candidate_step = timeline_item["candidate_step"]
+            departure_timestamp = int(timeline_item["departure_timestamp"])
+            if not isinstance(candidate_step, CandidateStep):
+                raise TypeError("Candidate timeline item is missing a candidate step.")
+            predictions[index] = self._build_coarse_prediction(
+                edge=candidate_step.edge,
+                departure_timestamp=departure_timestamp,
+                segment_record=segment_record,
+            )
+
+        if supported_records:
+            supported_predictions = self.prediction_service.predict_segments(supported_records)
+            for index, prediction in zip(
+                supported_indices,
+                supported_predictions,
+                strict=True,
+            ):
+                predictions[index] = prediction
+
+        return [
+            prediction
+            for prediction in predictions
+            if prediction is not None
+        ]
+
     def _reconstruct_candidate_path(
         self,
         labels_by_id: dict[int, SearchLabel],
@@ -796,8 +847,9 @@ class RouteOptimizationService:
         *,
         edge: SegmentEdge,
         departure_timestamp: int,
-    ) -> dict[str, float]:
-        segment_record = self._build_segment_record(edge, departure_timestamp)
+        segment_record: dict[str, str | int | float] | None = None,
+    ) -> dict[str, float | str | bool]:
+        segment_record = segment_record or self._build_segment_record(edge, departure_timestamp)
         scheduled_segment_minutes = max(
             MIN_EDGE_WEIGHT_MINUTES,
             float(segment_record["scheduled_segment_minutes"]),
@@ -876,7 +928,6 @@ class RouteOptimizationService:
         )
 
         return {
-            **segment_record,
             "predicted_actual_segment_minutes": predicted_actual_segment_minutes,
             "predicted_segment_delay_minutes": (
                 predicted_actual_segment_minutes - scheduled_segment_minutes
@@ -892,6 +943,8 @@ class RouteOptimizationService:
             "predicted_eta_upper_minutes": (
                 predicted_actual_segment_minutes + segment_uncertainty
             ),
+            "prediction_source": "scheduled_fallback",
+            "model_supported": False,
         }
 
     def _resolve_stop_variants(
@@ -1324,6 +1377,12 @@ class RouteOptimizationService:
                 "service_quality_score": edge_prediction_cache[
                     (step.edge, step.scheduled_departure_unix)
                 ].get("service_quality_score", 1.0),
+                "prediction_source": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("prediction_source", "ml"),
+                "model_supported": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("model_supported", True),
                 "predicted_actual_segment_minutes": edge_prediction_cache[
                     (step.edge, step.scheduled_departure_unix)
                 ][

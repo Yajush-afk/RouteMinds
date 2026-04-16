@@ -18,8 +18,22 @@ from api.app.services.route_optimization_service import RouteOptimizationService
 
 
 class StubPredictionService:
-    def __init__(self, weights: dict[tuple[str, str], float]):
+    def __init__(
+        self,
+        weights: dict[tuple[str, str], float],
+        *,
+        unsupported_route_edges: set[tuple[str, str, str]] | None = None,
+    ):
         self.weights = weights
+        self.unsupported_route_edges = unsupported_route_edges or set()
+
+    def supports_segment_record(self, segment_record: dict) -> bool:
+        route_edge_key = (
+            str(segment_record["route_id"]),
+            str(segment_record["from_stop_id"]),
+            str(segment_record["to_stop_id"]),
+        )
+        return route_edge_key not in self.unsupported_route_edges
 
     def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
         predictions = []
@@ -476,6 +490,64 @@ class RouteOptimizationServiceTests(unittest.TestCase):
 
         self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
         self.assertGreater(result.cost_breakdown["transfer_penalty_cost"], 0.0)
+
+    def test_service_falls_back_to_schedule_scoring_for_unsupported_route_edges(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edge = SegmentEdge(
+            "R1",
+            "A",
+            "C",
+            1,
+            1.0,
+            2.0,
+            5.0,
+            (8 * 3600,),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=(edge,),
+            edges_from_stop={"A": (edge,)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "C"): 0.1},
+            unsupported_route_edges={("R1", "A", "C")},
+        )
+        segment_contexts = {
+            ("R1", "A", "C"): type(
+                "SegmentContext",
+                (),
+                {
+                    "prev_segment_delay": 0.0,
+                    "rolling_segment_delay_3": 0.0,
+                    "route_delay_minutes_live": 6.0,
+                    "segment_slowdown_index": 1.2,
+                    "corridor_slowdown_score_live": 1.1,
+                    "bunching_indicator": 0.0,
+                    "headway_irregularity_score_live": 0.0,
+                    "stop_recent_arrival_gap_minutes": 0.0,
+                    "corridor_instability_score_live": 0.1,
+                    "service_quality_score": 0.9,
+                    "persistent_unreliability_penalty": 0.0,
+                },
+            )(),
+        }
+        realtime_service = StubRealtimeSegmentService(segment_contexts=segment_contexts)
+        service = RouteOptimizationService(
+            StubGraphService(graph),
+            prediction_service,
+            realtime_enrichment_service=realtime_service,
+        )
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual(result.segments[0]["prediction_source"], "scheduled_fallback")
+        self.assertFalse(result.segments[0]["model_supported"])
+        self.assertGreater(result.segments[0]["predicted_actual_segment_minutes"], 5.0)
+        self.assertGreater(result.total_predicted_eta_minutes, 5.0)
 
     def test_service_penalizes_unstable_corridor_when_eta_is_close(self) -> None:
         query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)

@@ -15,6 +15,7 @@ from api.app.api.v1.stops import router as stops_router
 from api.app.core.config import settings
 from api.app.core.exceptions import RouteMindsException, routeminds_exception_handler
 from api.app.services.gtfs_graph_service import GTFSGraphService
+from api.app.services.prediction_service import load_supported_route_edges
 from api.app.services.realtime_enrichment_service import get_realtime_enrichment_service
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,13 @@ async def warm_static_graph() -> None:
         logger.warning("Static graph warm-up failed: %s", exc)
 
 
+async def warm_model_support() -> None:
+    try:
+        await asyncio.to_thread(load_supported_route_edges)
+    except Exception as exc:
+        logger.warning("Model support warm-up failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime_configuration()
@@ -57,6 +65,7 @@ async def lifespan(app: FastAPI):
         )
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     graph_warmup_task = asyncio.create_task(warm_static_graph())
+    model_support_warmup_task = asyncio.create_task(warm_model_support())
     refresh_task = asyncio.create_task(realtime_refresh_loop())
     try:
         yield
@@ -64,6 +73,9 @@ async def lifespan(app: FastAPI):
         graph_warmup_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await graph_warmup_task
+        model_support_warmup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await model_support_warmup_task
         refresh_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await refresh_task
