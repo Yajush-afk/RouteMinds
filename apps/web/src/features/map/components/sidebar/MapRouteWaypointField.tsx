@@ -58,7 +58,11 @@ function MapRouteWaypointField({
   )
 
   const showNoResults =
-    shouldSearch && hasAttempted && !isSearching && !errorMessage && results.length === 0
+    shouldSearch &&
+    hasAttempted &&
+    !isSearching &&
+    !errorMessage &&
+    results.length === 0
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -129,7 +133,8 @@ function MapRouteWaypointField({
   }
 
   const showDropdown =
-    isOpen && (isSearching || results.length > 0 || showNoResults || !!errorMessage)
+    isOpen &&
+    (isSearching || results.length > 0 || showNoResults || !!errorMessage)
 
   return (
     <div
@@ -150,7 +155,7 @@ function MapRouteWaypointField({
                 setIsOpen(true)
               }}
               onKeyDown={handleKeyDown}
-              className="h-11 rounded-2xl border-slate-200 bg-white pl-9 pr-10 text-[0.95rem] shadow-none"
+              className="pr-10 pl-9"
             />
             {query ? (
               <button
@@ -166,7 +171,10 @@ function MapRouteWaypointField({
 
           {selectedStop ? (
             <p className="mt-2 px-1 text-xs leading-5 text-slate-500">
-              Selected stop ID: <span className="font-medium text-slate-700">{selectedStop.stopId}</span>
+              Selected stop ID:{" "}
+              <span className="font-medium text-slate-700">
+                {selectedStop.stopId}
+              </span>
             </p>
           ) : null}
         </div>
@@ -218,7 +226,9 @@ function MapRouteWaypointField({
           ) : null}
 
           {!isSearching && errorMessage ? (
-            <div className="px-4 py-3 text-sm text-rose-600">{errorMessage}</div>
+            <div className="px-4 py-3 text-sm text-rose-600">
+              {errorMessage}
+            </div>
           ) : null}
 
           {!isSearching && !errorMessage && results.length > 0 ? (
@@ -226,7 +236,9 @@ function MapRouteWaypointField({
               {results.map((result, index) => (
                 <li
                   key={`${result.stopId}-${result.stopName}`}
-                  className={cn(index > 0 ? "border-t border-slate-100" : undefined)}
+                  className={cn(
+                    index > 0 ? "border-t border-slate-100" : undefined
+                  )}
                 >
                   <button
                     type="button"
@@ -239,7 +251,9 @@ function MapRouteWaypointField({
                         : "text-slate-700 hover:bg-slate-50"
                     )}
                   >
-                    <span className="text-sm font-medium">{result.stopName}</span>
+                    <span className="text-sm font-medium">
+                      {result.stopName}
+                    </span>
                     <span className="text-xs text-slate-500">
                       Stop ID {result.stopId}
                     </span>
