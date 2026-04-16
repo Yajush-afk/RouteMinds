@@ -24,8 +24,8 @@ MAX_UNSTABLE_CORRIDOR_PENALTY_MINUTES = 2.5
 MAX_DETOUR_PENALTY_MINUTES = 1.5
 MAX_FRAGILE_TRANSFER_PENALTY_MINUTES = 3.0
 MAX_CANDIDATE_PATHS = 6
-MAX_LABELS_PER_STATE = 3
-MAX_ROUTE_STEPS = 48
+MAX_LABELS_PER_STATE = 2
+MAX_ROUTE_STEPS = 192
 MAX_EXPANDED_LABELS = 50_000
 CANDIDATE_COST_MARGIN_MINUTES = 12.0
 CANDIDATE_COST_RATIO = 1.5
@@ -269,12 +269,12 @@ class RouteOptimizationService:
         destination_variants = self._resolve_stop_variants(graph, destination_stop_id)
         fallback_phases = [
             [
-                (origin_variants[0], destination_variant)
-                for destination_variant in destination_variants[1:]
-            ],
-            [
                 (origin_variant, destination_variants[0])
                 for origin_variant in origin_variants[1:]
+            ],
+            [
+                (origin_variants[0], destination_variant)
+                for destination_variant in destination_variants[1:]
             ],
             [
                 (origin_variant, destination_variant)
@@ -459,48 +459,23 @@ class RouteOptimizationService:
                     0.0,
                     (departure_timestamp - current_label.arrival_timestamp) / 60.0,
                 )
-                wait_minutes_before_boarding, boarding_feasibility_score = (
-                    self._estimate_wait_and_boarding(
-                        edge=edge,
-                        current_state=current_label.state,
-                        current_arrival_timestamp=current_label.arrival_timestamp,
-                        scheduled_wait_minutes=scheduled_wait_minutes_before_boarding,
-                    )
+                edge_weight = max(edge.scheduled_segment_minutes, MIN_EDGE_WEIGHT_MINUTES)
+                transfer_penalty_cost = self._transfer_penalty_cost(
+                    current_route_id=current_label.state.active_route_id,
+                    next_route_id=edge.route_id,
                 )
-                coarse_prediction = self._build_coarse_prediction(
-                    edge=edge,
-                    departure_timestamp=departure_timestamp,
-                )
-                edge_weight = max(
-                    float(coarse_prediction["predicted_actual_segment_minutes"]),
-                    MIN_EDGE_WEIGHT_MINUTES,
-                )
-                reliability_penalty_minutes = self._reliability_penalty_minutes(
-                    prediction=coarse_prediction,
-                    boarding_feasibility_score=boarding_feasibility_score,
-                )
-                transfer_assessment = self._transfer_assessment(
-                    edge=edge,
-                    current_state=current_label.state,
-                    prediction=coarse_prediction,
-                    scheduled_wait_minutes=scheduled_wait_minutes_before_boarding,
-                    boarding_feasibility_score=boarding_feasibility_score,
-                )
-                cost_breakdown = self._generalized_cost_breakdown(
-                    edge=edge,
-                    current_state=current_label.state,
-                    prediction=coarse_prediction,
-                    travel_time_minutes=edge_weight,
-                    wait_minutes=wait_minutes_before_boarding,
-                    reliability_penalty_minutes=reliability_penalty_minutes,
-                    boarding_feasibility_score=boarding_feasibility_score,
-                    transfer_assessment=transfer_assessment,
+                detour_penalty_cost = self._detour_penalty_minutes(edge=edge)
+                candidate_distance = (
+                    current_label.generalized_cost
+                    + scheduled_wait_minutes_before_boarding
+                    + edge_weight
+                    + transfer_penalty_cost
+                    + detour_penalty_cost
                 )
                 candidate_eta = (
-                    current_label.eta_minutes + wait_minutes_before_boarding + edge_weight
-                )
-                candidate_distance = (
-                    current_label.generalized_cost + cost_breakdown.generalized_cost
+                    current_label.eta_minutes
+                    + scheduled_wait_minutes_before_boarding
+                    + edge_weight
                 )
                 next_state = RouteState(
                     stop_id=edge.to_stop_id,
@@ -574,27 +549,43 @@ class RouteOptimizationService:
         *,
         query_timestamp_unix: int,
     ) -> ScoredCandidate:
-        current_arrival_timestamp = query_timestamp_unix
         total_predicted_eta_minutes = 0.0
         generalized_cost_minutes = 0.0
         route_steps: list[RouteStep] = []
         edge_prediction_cache: dict[tuple[SegmentEdge, int], dict[str, float]] = {}
-
-        for candidate_step in candidate_path:
-            edge = candidate_step.edge
-            departure_timestamp = self._resolve_departure_timestamp_for_edge(
-                edge=edge,
-                current_state=candidate_step.from_state,
-                current_arrival_timestamp=current_arrival_timestamp,
+        initial_timeline = self._materialize_candidate_timeline(
+            candidate_path,
+            query_timestamp_unix=query_timestamp_unix,
+        )
+        initial_predictions = self.prediction_service.predict_segments(
+            [item["segment_record"] for item in initial_timeline]
+        )
+        predicted_travel_minutes_by_index = {
+            index: max(
+                float(prediction["predicted_actual_segment_minutes"]),
+                MIN_EDGE_WEIGHT_MINUTES,
             )
-            if departure_timestamp is None:
-                raise RouteNotFoundException(
-                    candidate_step.from_state.stop_id,
-                    candidate_step.to_state.stop_id,
-                )
+            for index, prediction in enumerate(initial_predictions)
+        }
+        final_timeline = self._materialize_candidate_timeline(
+            candidate_path,
+            query_timestamp_unix=query_timestamp_unix,
+            predicted_travel_minutes_by_index=predicted_travel_minutes_by_index,
+        )
+        final_predictions = self.prediction_service.predict_segments(
+            [item["segment_record"] for item in final_timeline]
+        )
 
-            segment_record = self._build_segment_record(edge, departure_timestamp)
-            prediction = self.prediction_service.predict_segments([segment_record])[0]
+        for timeline_item, prediction in zip(final_timeline, final_predictions, strict=True):
+            candidate_step = timeline_item["candidate_step"]
+            edge = candidate_step.edge
+            departure_timestamp = int(timeline_item["departure_timestamp"])
+            current_arrival_timestamp = int(timeline_item["arrival_timestamp"])
+            scheduled_wait_minutes_before_boarding = float(
+                timeline_item["scheduled_wait_minutes_before_boarding"]
+            )
+            segment_record = timeline_item["segment_record"]
+
             enriched_prediction = {
                 **segment_record,
                 **prediction,
@@ -603,10 +594,6 @@ class RouteOptimizationService:
             edge_weight = max(
                 float(enriched_prediction["predicted_actual_segment_minutes"]),
                 MIN_EDGE_WEIGHT_MINUTES,
-            )
-            scheduled_wait_minutes_before_boarding = max(
-                0.0,
-                (departure_timestamp - current_arrival_timestamp) / 60.0,
             )
             wait_minutes_before_boarding, boarding_feasibility_score = (
                 self._estimate_wait_and_boarding(
@@ -654,7 +641,6 @@ class RouteOptimizationService:
             )
             total_predicted_eta_minutes += wait_minutes_before_boarding + edge_weight
             generalized_cost_minutes += cost_breakdown.generalized_cost
-            current_arrival_timestamp = departure_timestamp + int(round(edge_weight * 60.0))
 
         return ScoredCandidate(
             route_steps=route_steps,
@@ -662,6 +648,53 @@ class RouteOptimizationService:
             total_predicted_eta_minutes=total_predicted_eta_minutes,
             generalized_cost_minutes=generalized_cost_minutes,
         )
+
+    def _materialize_candidate_timeline(
+        self,
+        candidate_path: list[CandidateStep],
+        *,
+        query_timestamp_unix: int,
+        predicted_travel_minutes_by_index: dict[int, float] | None = None,
+    ) -> list[dict[str, object]]:
+        timeline: list[dict[str, object]] = []
+        current_arrival_timestamp = query_timestamp_unix
+
+        for index, candidate_step in enumerate(candidate_path):
+            edge = candidate_step.edge
+            departure_timestamp = self._resolve_departure_timestamp_for_edge(
+                edge=edge,
+                current_state=candidate_step.from_state,
+                current_arrival_timestamp=current_arrival_timestamp,
+            )
+            if departure_timestamp is None:
+                raise RouteNotFoundException(
+                    candidate_step.from_state.stop_id,
+                    candidate_step.to_state.stop_id,
+                )
+
+            timeline.append(
+                {
+                    "candidate_step": candidate_step,
+                    "arrival_timestamp": current_arrival_timestamp,
+                    "departure_timestamp": departure_timestamp,
+                    "scheduled_wait_minutes_before_boarding": max(
+                        0.0,
+                        (departure_timestamp - current_arrival_timestamp) / 60.0,
+                    ),
+                    "segment_record": self._build_segment_record(edge, departure_timestamp),
+                }
+            )
+
+            travel_minutes = (
+                predicted_travel_minutes_by_index.get(index, edge.scheduled_segment_minutes)
+                if predicted_travel_minutes_by_index
+                else edge.scheduled_segment_minutes
+            )
+            current_arrival_timestamp = departure_timestamp + int(
+                round(max(travel_minutes, MIN_EDGE_WEIGHT_MINUTES) * 60.0)
+            )
+
+        return timeline
 
     def _reconstruct_candidate_path(
         self,
@@ -869,7 +902,7 @@ class RouteOptimizationService:
         stop = graph.stops_by_id[stop_id]
         variants = [StopVariant(stop_id=stop_id, distance_km=0.0)]
         seen_stop_ids = {stop_id}
-        for match in self.graph_service.search_stops(stop.stop_name, limit=5):
+        for match in self.graph_service.search_stops(stop.stop_name, limit=3):
             candidate_stop_id = str(match["stop_id"])
             if candidate_stop_id in seen_stop_ids:
                 continue

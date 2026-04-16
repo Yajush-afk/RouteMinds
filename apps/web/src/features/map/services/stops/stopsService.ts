@@ -12,6 +12,24 @@ type StopSearchResponse = {
   }>
 }
 
+const SEARCH_REQUEST_TIMEOUT_MS = 8_000
+
+function withTimeout(signal: AbortSignal | undefined, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  const abortFromCaller = () => controller.abort()
+  signal?.addEventListener("abort", abortFromCaller, { once: true })
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      window.clearTimeout(timeoutId)
+      signal?.removeEventListener("abort", abortFromCaller)
+    },
+  }
+}
+
 export async function searchStops(
   query: string,
   options: {
@@ -30,18 +48,28 @@ export async function searchStops(
     limit: String(options.limit ?? 8),
   })
 
-  const response = await apiFetch<StopSearchResponse>(`/stops/search?${params}`, {
-    signal: options.signal,
-  })
+  const request = withTimeout(options.signal, SEARCH_REQUEST_TIMEOUT_MS)
 
-  return response.stops.map((stop) => ({
-    stopId: stop.stop_id,
-    stopName: stop.stop_name,
-    position: {
-      lat: stop.stop_lat,
-      lng: stop.stop_lon,
-    },
-    matchScore: stop.match_score,
-  }))
+  try {
+    const response = await apiFetch<StopSearchResponse>(`/stops/search?${params}`, {
+      signal: request.signal,
+    })
+
+    return response.stops.map((stop) => ({
+      stopId: stop.stop_id,
+      stopName: stop.stop_name,
+      position: {
+        lat: stop.stop_lat,
+        lng: stop.stop_lon,
+      },
+      matchScore: stop.match_score,
+    }))
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError" && !options.signal?.aborted) {
+      throw new Error("Stop search timed out. Please try again.")
+    }
+    throw error
+  } finally {
+    request.cleanup()
+  }
 }
-
