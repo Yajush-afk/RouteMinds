@@ -1,3 +1,18 @@
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type Modifier,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
 import { memo } from "react"
 import { ArrowRight, LogOut, Plus, Trash2 } from "lucide-react"
 
@@ -37,8 +52,7 @@ type MapRouteSidebarProps = {
   onWaypointSelect: (waypointId: string, stop: StopSearchResult) => void
   onWaypointClear: (waypointId: string) => void
   onWaypointRemove: (waypointId: string) => void
-  onWaypointMoveUp: (waypointId: string) => void
-  onWaypointMoveDown: (waypointId: string) => void
+  onWaypointReorder: (activeWaypointId: string, overWaypointId: string) => void
   onAddWaypoint: () => void
   onClearTrip: () => void
   user: {
@@ -54,6 +68,11 @@ type DetailRowProps = {
   value: string
   valueTone?: string
 }
+
+const verticalOnlyDragModifier: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+})
 
 function formatMinutes(value: number) {
   if (Number.isInteger(value)) {
@@ -135,13 +154,13 @@ function getAvatarFallback(name?: string, email?: string) {
 
 function DetailRow({ label, value, valueTone }: DetailRowProps) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="text-xs font-medium tracking-[0.12em] text-slate-500 uppercase">
+    <div className="flex min-w-0 items-start justify-between gap-4">
+      <span className="shrink-0 text-xs font-medium tracking-[0.12em] text-slate-500 uppercase">
         {label}
       </span>
       <span
         className={cn(
-          "max-w-[65%] text-right text-sm font-medium text-slate-900",
+          "max-w-[65%] min-w-0 text-right text-sm font-medium break-words text-slate-900",
           valueTone
         )}
       >
@@ -161,8 +180,7 @@ function MapRouteSidebar({
   onWaypointSelect,
   onWaypointClear,
   onWaypointRemove,
-  onWaypointMoveUp,
-  onWaypointMoveDown,
+  onWaypointReorder,
   onAddWaypoint,
   onClearTrip,
   user,
@@ -171,10 +189,28 @@ function MapRouteSidebar({
   const readyLegCount = routeLegs.filter((leg) => leg.status === "ready").length
   const avatarFallback = getAvatarFallback(user?.name, user?.email)
   const avatarTitle = user?.name ?? user?.email ?? "RouteMinds user"
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  function handleWaypointDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+
+    if (!over || active.id === over.id) {
+      return
+    }
+
+    onWaypointReorder(String(active.id), String(over.id))
+  }
 
   return (
-    <Sidebar className="pointer-events-auto absolute top-4 bottom-4 left-4 z-40 h-auto overflow-hidden rounded-[1.75rem] border border-white/70 bg-white/88 p-2 shadow-[0_30px_95px_-48px_rgba(15,23,42,0.48)] backdrop-blur-xl">
-      <SidebarHeader className="gap-0 border-b border-sidebar-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.88))]">
+    <Sidebar className="pointer-events-auto absolute top-4 bottom-4 left-4 z-40 h-auto max-w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] overflow-hidden rounded-2xl border border-white/70 bg-white/88 p-2 shadow-[0_30px_95px_-48px_rgba(15,23,42,0.48)] backdrop-blur-xl">
+      <SidebarHeader className="gap-0 border-b border-sidebar-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.88))] px-4 py-3">
         <div className="flex w-full items-center justify-center gap-2">
           <img
             src="/favicon.svg"
@@ -188,8 +224,8 @@ function MapRouteSidebar({
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup className="gap-4">
+      <SidebarContent className="min-w-0 overflow-x-hidden overscroll-x-none">
+        <SidebarGroup className="relative z-20 gap-4 overflow-visible">
           <div className="flex items-center justify-between gap-3 px-1">
             <SidebarGroupLabel className="px-0">Stops</SidebarGroupLabel>
             <div className="flex items-center gap-2">
@@ -217,32 +253,43 @@ function MapRouteSidebar({
             </div>
           </div>
 
-          <SidebarGroupContent>
-            {waypoints.map((waypoint, index) => (
-              <MapRouteWaypointField
-                key={waypoint.id}
-                badge={String.fromCharCode(65 + index)}
-                query={waypoint.query}
-                selectedStop={waypoint.selectedStop}
-                canMoveUp={index > 0}
-                canMoveDown={index < waypoints.length - 1}
-                canRemove={index >= 2}
-                onQueryChange={(query) =>
-                  onWaypointQueryChange(waypoint.id, query)
-                }
-                onSelect={(stop) => onWaypointSelect(waypoint.id, stop)}
-                onClear={() => onWaypointClear(waypoint.id)}
-                onRemove={() => onWaypointRemove(waypoint.id)}
-                onMoveUp={() => onWaypointMoveUp(waypoint.id)}
-                onMoveDown={() => onWaypointMoveDown(waypoint.id)}
-              />
-            ))}
+          <SidebarGroupContent className="overflow-visible">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[verticalOnlyDragModifier]}
+              onDragEnd={handleWaypointDragEnd}
+            >
+              <SortableContext
+                items={waypoints.map((waypoint) => waypoint.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-3 overflow-x-hidden">
+                  {waypoints.map((waypoint, index) => (
+                    <MapRouteWaypointField
+                      key={waypoint.id}
+                      waypointId={waypoint.id}
+                      badge={String.fromCharCode(65 + index)}
+                      query={waypoint.query}
+                      selectedStop={waypoint.selectedStop}
+                      canRemove={index >= 2}
+                      onQueryChange={(query) =>
+                        onWaypointQueryChange(waypoint.id, query)
+                      }
+                      onSelect={(stop) => onWaypointSelect(waypoint.id, stop)}
+                      onClear={() => onWaypointClear(waypoint.id)}
+                      onRemove={() => onWaypointRemove(waypoint.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </SidebarGroupContent>
         </SidebarGroup>
 
         <Separator className="mx-4 w-auto bg-sidebar-border/80" />
 
-        <SidebarGroup>
+        <SidebarGroup className="relative z-0">
           <SidebarGroupLabel>Trip Summary</SidebarGroupLabel>
           <SidebarGroupContent className="rounded-2xl border border-slate-200/80 bg-white/84 px-3 py-3">
             <DetailRow
@@ -277,7 +324,7 @@ function MapRouteSidebar({
 
         <Separator className="mx-4 w-auto bg-sidebar-border/80" />
 
-        <SidebarGroup className="pb-6">
+        <SidebarGroup className="relative z-0 pb-6">
           <SidebarGroupLabel>Route Legs</SidebarGroupLabel>
           <SidebarGroupContent>
             {routeLegs.length === 0 ? (
@@ -362,7 +409,14 @@ function MapRouteSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="flex items-center justify-between gap-3 border-t border-sidebar-border/80 bg-white/84">
+      <SidebarFooter className="flex items-center justify-between gap-3 border-t border-sidebar-border/80 bg-white/84 px-4 py-3">
+        <Avatar className="size-9 ring-1 ring-slate-200/80">
+          <AvatarImage src={user?.picture} alt={avatarTitle} />
+          <AvatarFallback className="bg-slate-100 text-xs font-semibold tracking-[0.12em] text-slate-700">
+            {avatarFallback}
+          </AvatarFallback>
+        </Avatar>
+
         <Button
           type="button"
           variant="ghost"
@@ -375,13 +429,6 @@ function MapRouteSidebar({
           <LogOut className="size-4" />
           Sign out
         </Button>
-
-        <Avatar className="size-9 ring-1 ring-slate-200/80">
-          <AvatarImage src={user?.picture} alt={avatarTitle} />
-          <AvatarFallback className="bg-slate-100 text-xs font-semibold tracking-[0.12em] text-slate-700">
-            {avatarFallback}
-          </AvatarFallback>
-        </Avatar>
       </SidebarFooter>
     </Sidebar>
   )
