@@ -69,16 +69,19 @@ export async function optimizeRoute(
   const request = withTimeout(options.signal, ROUTE_REQUEST_TIMEOUT_MS)
 
   try {
-    const response = await apiFetch<RouteOptimizationResponse>("/routes/optimize", {
-      auth: true,
-      method: "POST",
-      signal: request.signal,
-      body: JSON.stringify({
-        origin_stop_id: originStopId,
-        destination_stop_id: destinationStopId,
-        query_timestamp_unix: queryTimestampUnix,
-      }),
-    })
+    const response = await apiFetch<RouteOptimizationResponse>(
+      "/routes/optimize",
+      {
+        auth: true,
+        method: "POST",
+        signal: request.signal,
+        body: JSON.stringify({
+          origin_stop_id: originStopId,
+          destination_stop_id: destinationStopId,
+          query_timestamp_unix: queryTimestampUnix,
+        }),
+      }
+    )
 
     return {
       stops: response.stops.map((stop) => ({
@@ -109,8 +112,14 @@ export async function optimizeRoute(
       transferCount: response.transfer_count,
     }
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError" && !options.signal?.aborted) {
-      throw new Error("Route optimization timed out. Try selecting a nearby alternative stop.")
+    if (
+      error instanceof DOMException &&
+      error.name === "AbortError" &&
+      !options.signal?.aborted
+    ) {
+      throw new Error(
+        "Route optimization timed out. Try selecting a nearby alternative stop."
+      )
     }
     throw error
   } finally {

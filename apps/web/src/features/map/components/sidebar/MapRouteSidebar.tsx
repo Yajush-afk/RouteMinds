@@ -1,14 +1,20 @@
-import { memo } from "react"
 import {
-  AlertTriangle,
-  ArrowRight,
-  Clock3,
-  MapPinned,
-  Plus,
-  Route,
-  Sparkles,
-  Trash2,
-} from "lucide-react"
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type Modifier,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { memo } from "react"
+import { ArrowRight, LogOut, Plus, Trash2 } from "lucide-react"
 
 import type {
   PlannerStatus,
@@ -18,18 +24,17 @@ import type {
   WaypointField,
 } from "@/features/map/domain/types"
 import MapRouteWaypointField from "@/features/map/components/sidebar/MapRouteWaypointField"
-import { Button } from "@workspace/ui/components/button"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@workspace/ui/components/card"
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
+import { Button } from "@workspace/ui/components/button"
 import { Separator } from "@workspace/ui/components/separator"
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -47,11 +52,27 @@ type MapRouteSidebarProps = {
   onWaypointSelect: (waypointId: string, stop: StopSearchResult) => void
   onWaypointClear: (waypointId: string) => void
   onWaypointRemove: (waypointId: string) => void
-  onWaypointMoveUp: (waypointId: string) => void
-  onWaypointMoveDown: (waypointId: string) => void
+  onWaypointReorder: (activeWaypointId: string, overWaypointId: string) => void
   onAddWaypoint: () => void
   onClearTrip: () => void
+  user: {
+    email?: string
+    name?: string
+    picture?: string
+  } | null
+  onSignOut: () => Promise<void>
 }
+
+type DetailRowProps = {
+  label: string
+  value: string
+  valueTone?: string
+}
+
+const verticalOnlyDragModifier: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+})
 
 function formatMinutes(value: number) {
   if (Number.isInteger(value)) {
@@ -59,17 +80,6 @@ function formatMinutes(value: number) {
   }
 
   return `${value.toFixed(1)} min`
-}
-
-function formatScheduleDeviation(value: number) {
-  const absoluteDeviation = Math.abs(value)
-  if (absoluteDeviation < 1) {
-    return "On time"
-  }
-  if (value < 0) {
-    return `Early ${formatMinutes(absoluteDeviation)}`
-  }
-  return `Delayed ${formatMinutes(value)}`
 }
 
 function formatArrivalTime(timestamp: number | null) {
@@ -83,33 +93,18 @@ function formatArrivalTime(timestamp: number | null) {
   }).format(new Date(timestamp * 1000))
 }
 
-function getPlannerBanner(plannerStatus: PlannerStatus) {
+function getPlannerStatusLabel(plannerStatus: PlannerStatus) {
   switch (plannerStatus) {
     case "routing":
-      return {
-        tone: "text-sky-700 bg-sky-50 border-sky-100",
-        label: "Updating drawn routes between selected bus stops.",
-      }
+      return "Updating routes"
     case "partial":
-      return {
-        tone: "text-amber-700 bg-amber-50 border-amber-100",
-        label: "Some route legs could not be drawn. The rest of the trip is still available.",
-      }
+      return "Partially available"
     case "error":
-      return {
-        tone: "text-rose-700 bg-rose-50 border-rose-100",
-        label: "Route drawing failed for the selected stops.",
-      }
+      return "Route unavailable"
     case "ready":
-      return {
-        tone: "text-emerald-700 bg-emerald-50 border-emerald-100",
-        label: "Routes are drawn from the optimized stop sequence.",
-      }
+      return "Ready"
     default:
-      return {
-        tone: "text-slate-600 bg-slate-50 border-slate-100",
-        label: "",
-      }
+      return "Waiting for stops"
   }
 }
 
@@ -118,9 +113,7 @@ function getLegStatusLabel(leg: RouteLegPlan) {
     case "loading":
       return "Drawing route"
     case "ready":
-      return leg.totalDelayMinutes <= -1
-        ? "Early"
-        : leg.totalDelayMinutes > 8
+      return leg.totalDelayMinutes > 8
         ? "Heavy delay"
         : leg.totalDelayMinutes > 3
           ? "Moderate delay"
@@ -130,6 +123,51 @@ function getLegStatusLabel(leg: RouteLegPlan) {
     default:
       return "Waiting for stops"
   }
+}
+
+function getAvatarFallback(name?: string, email?: string) {
+  const words = (name ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]/gi, ""))
+    .filter(Boolean)
+
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.slice(0, 2).toUpperCase()
+  }
+
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase()
+  }
+
+  const emailLocalPart = (email ?? "")
+    .split("@")[0]
+    ?.replace(/[^a-z0-9]/gi, "")
+    .trim()
+
+  if (emailLocalPart) {
+    return emailLocalPart.slice(0, 2).toUpperCase()
+  }
+
+  return "RM"
+}
+
+function DetailRow({ label, value, valueTone }: DetailRowProps) {
+  return (
+    <div className="flex min-w-0 items-start justify-between gap-4">
+      <span className="shrink-0 text-xs font-medium tracking-[0.12em] text-slate-500 uppercase">
+        {label}
+      </span>
+      <span
+        className={cn(
+          "max-w-[65%] min-w-0 text-right text-sm font-medium break-words text-slate-900",
+          valueTone
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  )
 }
 
 function MapRouteSidebar({
@@ -142,252 +180,256 @@ function MapRouteSidebar({
   onWaypointSelect,
   onWaypointClear,
   onWaypointRemove,
-  onWaypointMoveUp,
-  onWaypointMoveDown,
+  onWaypointReorder,
   onAddWaypoint,
   onClearTrip,
+  user,
+  onSignOut,
 }: MapRouteSidebarProps) {
-  const plannerBanner = getPlannerBanner(plannerStatus)
   const readyLegCount = routeLegs.filter((leg) => leg.status === "ready").length
+  const avatarFallback = getAvatarFallback(user?.name, user?.email)
+  const avatarTitle = user?.name ?? user?.email ?? "RouteMinds user"
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  function handleWaypointDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+
+    if (!over || active.id === over.id) {
+      return
+    }
+
+    onWaypointReorder(String(active.id), String(over.id))
+  }
 
   return (
-    <Sidebar className="shadow-[20px_0_60px_-44px_rgba(15,23,42,0.45)]">
-      <SidebarHeader className="gap-5 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0.82))]">
-        <div className="flex items-start justify-between gap-4">
-          <div />
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClearTrip}
-            className="shrink-0 rounded-2xl text-slate-600 hover:bg-slate-100"
-          >
-            <Trash2 className="size-4" />
-            Clear trip
-          </Button>
+    <Sidebar className="pointer-events-auto absolute top-4 bottom-4 left-4 z-40 h-auto max-w-[var(--sidebar-width)] min-w-[var(--sidebar-width)] overflow-hidden rounded-2xl border border-white/70 bg-white/88 p-2 shadow-[0_30px_95px_-48px_rgba(15,23,42,0.48)] backdrop-blur-xl">
+      <SidebarHeader className="gap-0 border-b border-sidebar-border/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.88))] px-4 py-3">
+        <div className="flex w-full items-center justify-center gap-2">
+          <img
+            src="/favicon.svg"
+            alt=""
+            className="size-6"
+            aria-hidden="true"
+          />
+          <span className="text-lg font-semibold tracking-tight text-slate-900">
+            RouteMinds
+          </span>
         </div>
-
-        {plannerBanner.label ? (
-          <div
-            className={`rounded-[1.25rem] border px-4 py-3 text-sm leading-6 ${plannerBanner.tone}`}
-          >
-            {plannerBanner.label}
-          </div>
-        ) : null}
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup className="gap-4">
+      <SidebarContent className="min-w-0 overflow-x-hidden overscroll-x-none">
+        <SidebarGroup className="relative z-20 gap-4 overflow-visible">
           <div className="flex items-center justify-between gap-3 px-1">
-            <SidebarGroupLabel className="px-0">Waypoints</SidebarGroupLabel>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onAddWaypoint}
-              disabled={!canAddWaypoint}
-              className="rounded-2xl border-slate-200 bg-white"
-            >
-              <Plus className="size-4" />
-              Add stop
-            </Button>
+            <SidebarGroupLabel className="px-0">Stops</SidebarGroupLabel>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onAddWaypoint}
+                disabled={!canAddWaypoint}
+                className="rounded-xl border-slate-200 bg-white"
+              >
+                <Plus className="size-4" />
+                Add stop
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onClearTrip}
+                className="rounded-xl text-slate-600 hover:bg-slate-100"
+              >
+                <Trash2 className="size-4" />
+                Clear trip
+              </Button>
+            </div>
           </div>
 
-          <SidebarGroupContent>
-            {waypoints.map((waypoint, index) => (
-              <MapRouteWaypointField
-                key={waypoint.id}
-                badge={String.fromCharCode(65 + index)}
-                query={waypoint.query}
-                selectedStop={waypoint.selectedStop}
-                canMoveUp={index > 0}
-                canMoveDown={index < waypoints.length - 1}
-                canRemove={index >= 2}
-                onQueryChange={(query) => onWaypointQueryChange(waypoint.id, query)}
-                onSelect={(stop) => onWaypointSelect(waypoint.id, stop)}
-                onClear={() => onWaypointClear(waypoint.id)}
-                onRemove={() => onWaypointRemove(waypoint.id)}
-                onMoveUp={() => onWaypointMoveUp(waypoint.id)}
-                onMoveDown={() => onWaypointMoveDown(waypoint.id)}
-              />
-            ))}
+          <SidebarGroupContent className="overflow-visible">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[verticalOnlyDragModifier]}
+              onDragEnd={handleWaypointDragEnd}
+            >
+              <SortableContext
+                items={waypoints.map((waypoint) => waypoint.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-3 overflow-x-hidden">
+                  {waypoints.map((waypoint, index) => (
+                    <MapRouteWaypointField
+                      key={waypoint.id}
+                      waypointId={waypoint.id}
+                      badge={String.fromCharCode(65 + index)}
+                      query={waypoint.query}
+                      selectedStop={waypoint.selectedStop}
+                      canRemove={index >= 2}
+                      onQueryChange={(query) =>
+                        onWaypointQueryChange(waypoint.id, query)
+                      }
+                      onSelect={(stop) => onWaypointSelect(waypoint.id, stop)}
+                      onClear={() => onWaypointClear(waypoint.id)}
+                      onRemove={() => onWaypointRemove(waypoint.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </SidebarGroupContent>
         </SidebarGroup>
 
         <Separator className="mx-4 w-auto bg-sidebar-border/80" />
 
-        <SidebarGroup>
+        <SidebarGroup className="relative z-0">
           <SidebarGroupLabel>Trip Summary</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <Card variant="glass" padding="sm" className="border-white/70 bg-white/78">
-              <CardHeader className="gap-1">
-                <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
-                  <Sparkles className="size-4 text-sky-600" />
-                  Overview
-                </CardTitle>
-                <CardDescription>
-                  {readyLegCount > 0
-                    ? `${readyLegCount} route leg${readyLegCount === 1 ? "" : "s"} currently drawn on the map.`
-                    : "Add two or more stops to start drawing route legs."}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-slate-950 px-4 py-3 text-white">
-                  <p className="text-[11px] font-medium tracking-[0.16em] text-white/60 uppercase">
-                    ETA
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                    {summary ? formatMinutes(summary.totalEtaMinutes) : "--"}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-slate-100 px-4 py-3 text-slate-900">
-                  <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                    Arrival
-                  </p>
-                  <p className="mt-2 text-lg font-semibold tracking-[-0.03em]">
-                    {summary ? formatArrivalTime(summary.predictedArrivalUnix) : "--"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                  <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                    Schedule
-                  </p>
-                  <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-900">
-                    {summary ? formatScheduleDeviation(summary.totalDelayMinutes) : "--"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                  <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                    Transfers
-                  </p>
-                  <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-900">
-                    {summary ? summary.transferCount : "--"}
-                  </p>
-                </div>
-                <div className="col-span-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                  <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                    Total Wait
-                  </p>
-                  <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-900">
-                    {summary ? formatMinutes(summary.totalWaitMinutes) : "--"}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+          <SidebarGroupContent className="rounded-2xl border border-slate-200/80 bg-white/84 px-3 py-3">
+            <DetailRow
+              label="Status"
+              value={getPlannerStatusLabel(plannerStatus)}
+            />
+            <DetailRow label="Route legs" value={String(readyLegCount)} />
+            <DetailRow
+              label="ETA"
+              value={summary ? formatMinutes(summary.totalEtaMinutes) : "--"}
+            />
+            <DetailRow
+              label="Arrival"
+              value={
+                summary ? formatArrivalTime(summary.predictedArrivalUnix) : "--"
+              }
+            />
+            <DetailRow
+              label="Delay"
+              value={summary ? formatMinutes(summary.totalDelayMinutes) : "--"}
+            />
+            <DetailRow
+              label="Transfers"
+              value={summary ? String(summary.transferCount) : "--"}
+            />
+            <DetailRow
+              label="Total Wait"
+              value={summary ? formatMinutes(summary.totalWaitMinutes) : "--"}
+            />
           </SidebarGroupContent>
         </SidebarGroup>
 
         <Separator className="mx-4 w-auto bg-sidebar-border/80" />
 
-        <SidebarGroup className="pb-8">
+        <SidebarGroup className="relative z-0 pb-6">
           <SidebarGroupLabel>Route Legs</SidebarGroupLabel>
           <SidebarGroupContent>
             {routeLegs.length === 0 ? (
-              <Card variant="glass" padding="sm" className="border-white/70 bg-white/78">
-                <CardContent className="flex items-start gap-3 text-sm text-slate-600">
-                  <MapPinned className="mt-0.5 size-4 text-sky-600" />
-                  Drawn routes appear here once at least two bus stops are selected.
-                </CardContent>
-              </Card>
+              <div className="rounded-2xl border border-slate-200/80 bg-white/84 px-3 py-3 text-sm text-slate-600">
+                Add at least two selected stops to view route leg details.
+              </div>
             ) : (
               routeLegs.map((leg) => (
-                <Card
+                <div
                   key={leg.id}
-                  variant="glass"
-                  padding="sm"
-                  className="border-white/70 bg-white/78"
+                  className="rounded-2xl border border-slate-200/80 bg-white/84 px-3 py-3"
                 >
-                  <CardHeader className="gap-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
-                          <Route className="size-4 text-sky-600" />
-                          {leg.fromBadge} <ArrowRight className="size-4 text-slate-400" /> {leg.toBadge}
-                        </CardTitle>
-                        <CardDescription className="mt-1">
-                          {leg.fromStop?.stopName ?? "Select a stop"} to{" "}
-                          {leg.toStop?.stopName ?? "select a stop"}
-                        </CardDescription>
-                      </div>
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.12em] uppercase",
-                          leg.status === "ready"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : leg.status === "loading"
-                              ? "bg-sky-50 text-sky-700"
-                              : leg.status === "error"
-                                ? "bg-rose-50 text-rose-700"
-                                : "bg-slate-100 text-slate-600"
-                        )}
-                      >
-                        {getLegStatusLabel(leg)}
-                      </span>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="space-y-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    {leg.fromBadge}
+                    <ArrowRight className="size-3.5 text-slate-400" />
+                    {leg.toBadge}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    <DetailRow
+                      label="Stops"
+                      value={`${leg.fromStop?.stopName ?? "Select a stop"} to ${leg.toStop?.stopName ?? "select a stop"}`}
+                    />
+                    <DetailRow label="Status" value={getLegStatusLabel(leg)} />
+                    <DetailRow
+                      label="ETA"
+                      value={
+                        leg.status === "ready"
+                          ? formatMinutes(leg.totalEtaMinutes)
+                          : "--"
+                      }
+                    />
+                    <DetailRow
+                      label="Delay"
+                      value={
+                        leg.status === "ready"
+                          ? formatMinutes(leg.totalDelayMinutes)
+                          : "--"
+                      }
+                    />
+                    <DetailRow
+                      label="Wait"
+                      value={
+                        leg.status === "ready"
+                          ? formatMinutes(leg.waitMinutes)
+                          : "--"
+                      }
+                    />
+                    <DetailRow
+                      label="Routes"
+                      value={
+                        leg.status === "ready" && leg.segments.length > 0
+                          ? Array.from(
+                              new Set(
+                                leg.segments.map((segment) => segment.routeId)
+                              )
+                            ).join(", ")
+                          : "--"
+                      }
+                    />
+                    <DetailRow
+                      label="Routed Stops"
+                      value={
+                        leg.status === "ready"
+                          ? String(leg.responseStops.length)
+                          : "--"
+                      }
+                    />
                     {leg.status === "error" ? (
-                      <div className="flex items-start gap-2 rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-sm text-rose-700">
-                        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                        <span>{leg.errorMessage ?? "This leg could not be routed."}</span>
-                      </div>
+                      <DetailRow
+                        label="Error"
+                        value={
+                          leg.errorMessage ?? "This leg could not be routed."
+                        }
+                        valueTone="text-rose-700"
+                      />
                     ) : null}
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          ETA
-                        </p>
-                        <p className="mt-1.5 text-base font-semibold text-slate-900">
-                          {leg.status === "ready" ? formatMinutes(leg.totalEtaMinutes) : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          Schedule
-                        </p>
-                        <p className="mt-1.5 text-base font-semibold text-slate-900">
-                          {leg.status === "ready"
-                            ? formatScheduleDeviation(leg.totalDelayMinutes)
-                            : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          Boarding Wait
-                        </p>
-                        <p className="mt-1.5 text-base font-semibold text-slate-900">
-                          {leg.status === "ready" ? formatMinutes(leg.waitMinutes) : "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
-                        <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 uppercase">
-                          Bus Routes
-                        </p>
-                        <p className="mt-1.5 line-clamp-2 text-sm font-medium text-slate-900">
-                          {leg.status === "ready" && leg.segments.length > 0
-                            ? Array.from(new Set(leg.segments.map((segment) => segment.routeId))).join(", ")
-                            : "--"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {leg.status === "ready" ? (
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
-                        <Clock3 className="size-3.5" />
-                        Path includes {leg.responseStops.length} routed stop
-                        {leg.responseStops.length === 1 ? "" : "s"}.
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))
             )}
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter className="flex items-center justify-between gap-3 border-t border-sidebar-border/80 bg-white/84 px-4 py-3">
+        <Avatar className="size-9 ring-1 ring-slate-200/80">
+          <AvatarImage src={user?.picture} alt={avatarTitle} />
+          <AvatarFallback className="bg-slate-100 text-xs font-semibold tracking-[0.12em] text-slate-700">
+            {avatarFallback}
+          </AvatarFallback>
+        </Avatar>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            void onSignOut()
+          }}
+          className="rounded-xl text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+        >
+          <LogOut className="size-4" />
+          Sign out
+        </Button>
+      </SidebarFooter>
     </Sidebar>
   )
 }

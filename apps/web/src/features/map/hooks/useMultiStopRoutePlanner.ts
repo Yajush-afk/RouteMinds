@@ -57,27 +57,29 @@ function createInitialWaypoints() {
   )
 }
 
-function moveWaypointInList(
+function reorderWaypointInList(
   currentWaypoints: WaypointField[],
-  waypointId: string,
-  direction: -1 | 1
+  activeWaypointId: string,
+  overWaypointId: string
 ) {
-  const currentIndex = currentWaypoints.findIndex(
-    (waypoint) => waypoint.id === waypointId
-  )
-
-  if (currentIndex < 0) {
+  if (activeWaypointId === overWaypointId) {
     return currentWaypoints
   }
 
-  const nextIndex = currentIndex + direction
-  if (nextIndex < 0 || nextIndex >= currentWaypoints.length) {
+  const activeIndex = currentWaypoints.findIndex(
+    (waypoint) => waypoint.id === activeWaypointId
+  )
+  const overIndex = currentWaypoints.findIndex(
+    (waypoint) => waypoint.id === overWaypointId
+  )
+
+  if (activeIndex < 0 || overIndex < 0) {
     return currentWaypoints
   }
 
   const nextWaypoints = [...currentWaypoints]
-  const [movedWaypoint] = nextWaypoints.splice(currentIndex, 1)
-  nextWaypoints.splice(nextIndex, 0, movedWaypoint)
+  const [movedWaypoint] = nextWaypoints.splice(activeIndex, 1)
+  nextWaypoints.splice(overIndex, 0, movedWaypoint)
   return nextWaypoints
 }
 
@@ -123,19 +125,37 @@ function createIdleRouteLeg(
     totalEtaMinutes: 0,
     totalDelayMinutes: 0,
     waitMinutes: 0,
-    transferCount: 0,
     status,
     errorMessage: null,
     lineCoordinates: [],
   }
 }
 
+function getTransferCount(routeLegs: RouteLegPlan[]) {
+  let previousRouteId: string | null = null
+  let transferCount = 0
+
+  for (const leg of routeLegs) {
+    for (const segment of leg.segments) {
+      if (previousRouteId !== null && previousRouteId !== segment.routeId) {
+        transferCount += 1
+      }
+
+      previousRouteId = segment.routeId
+    }
+  }
+
+  return transferCount
+}
+
 export function useMultiStopRoutePlanner() {
-  const [waypoints, setWaypoints] = useState<WaypointField[]>(createInitialWaypoints)
-  const [routeWaypoints, setRouteWaypoints] = useState<WaypointField[]>(waypoints)
-  const [manualCameraIntent, setManualCameraIntent] = useState<CameraIntent | null>(
-    null
+  const [waypoints, setWaypoints] = useState<WaypointField[]>(
+    createInitialWaypoints
   )
+  const [routeWaypoints, setRouteWaypoints] =
+    useState<WaypointField[]>(waypoints)
+  const [manualCameraIntent, setManualCameraIntent] =
+    useState<CameraIntent | null>(null)
   const [routingResult, setRoutingResult] = useState<{
     requestKey: string
     legs: RouteLegPlan[]
@@ -180,7 +200,7 @@ export function useMultiStopRoutePlanner() {
             ? "origin"
             : selectedIndex === selectedWaypointIndices.length - 1
               ? "destination"
-            : "waypoint",
+              : "waypoint",
       }
     })
   }, [routeWaypoints])
@@ -208,8 +228,9 @@ export function useMultiStopRoutePlanner() {
   const selectedLegRequestKey = useMemo(
     () =>
       baseLegs
-        .map((leg) =>
-          `${leg.fromWaypointId}:${leg.fromStop?.stopId ?? ""}->${leg.toWaypointId}:${leg.toStop?.stopId ?? ""}`
+        .map(
+          (leg) =>
+            `${leg.fromWaypointId}:${leg.fromStop?.stopId ?? ""}->${leg.toWaypointId}:${leg.toStop?.stopId ?? ""}`
         )
         .join("|"),
     [baseLegs]
@@ -266,7 +287,9 @@ export function useMultiStopRoutePlanner() {
           )
 
           sawReadyLeg = true
-          cursorTimestampUnix += Math.round(result.totalPredictedEtaMinutes * 60)
+          cursorTimestampUnix += Math.round(
+            result.totalPredictedEtaMinutes * 60
+          )
 
           nextLegs.push({
             ...baseLeg,
@@ -274,37 +297,40 @@ export function useMultiStopRoutePlanner() {
             segments: result.segments,
             totalEtaMinutes: result.totalPredictedEtaMinutes,
             totalDelayMinutes: result.segments.reduce(
-              (total, segment) =>
-                total + segment.predictedSegmentDelayMinutes,
+              (total, segment) => total + segment.predictedSegmentDelayMinutes,
               0
             ),
-            waitMinutes: result.totalWaitMinutes,
-            transferCount: result.transferCount,
+            waitMinutes: result.segments.reduce(
+              (total, segment) => total + segment.waitMinutesBeforeBoarding,
+              0
+            ),
             status: "ready",
             lineCoordinates: [
               ...(result.stops[0]?.stopId !== baseLeg.fromStop.stopId
-                ? [[baseLeg.fromStop.position.lng, baseLeg.fromStop.position.lat] as [
-                    number,
-                    number,
-                  ]]
+                ? [
+                    [
+                      baseLeg.fromStop.position.lng,
+                      baseLeg.fromStop.position.lat,
+                    ] as [number, number],
+                  ]
                 : []),
-              ...result.stops.map((stop) => [
-                stop.position.lng,
-                stop.position.lat,
-              ] as [number, number]),
-              ...(result.stops[result.stops.length - 1]?.stopId !== baseLeg.toStop.stopId
-                ? [[baseLeg.toStop.position.lng, baseLeg.toStop.position.lat] as [
-                    number,
-                    number,
-                  ]]
+              ...result.stops.map(
+                (stop) =>
+                  [stop.position.lng, stop.position.lat] as [number, number]
+              ),
+              ...(result.stops[result.stops.length - 1]?.stopId !==
+              baseLeg.toStop.stopId
+                ? [
+                    [
+                      baseLeg.toStop.position.lng,
+                      baseLeg.toStop.position.lat,
+                    ] as [number, number],
+                  ]
                 : []),
             ],
           })
         } catch (error) {
-          if (
-            error instanceof DOMException &&
-            error.name === "AbortError"
-          ) {
+          if (error instanceof DOMException && error.name === "AbortError") {
             return
           }
 
@@ -402,10 +428,7 @@ export function useMultiStopRoutePlanner() {
         routingResult.queryTimestampUnix + Math.round(totalEtaMinutes * 60),
       totalDelayMinutes,
       totalWaitMinutes,
-      transferCount: readyLegs.reduce(
-        (total, leg) => total + leg.transferCount,
-        0
-      ),
+      transferCount: getTransferCount(readyLegs),
     }
   }, [routeLegs, routingResult, selectedLegRequestKey])
 
@@ -452,12 +475,7 @@ export function useMultiStopRoutePlanner() {
       bounds: toBounds(points),
       padding: 60,
     }
-  }, [
-    locationErrorCode,
-    routeLegs,
-    routeWaypoints,
-    userLocationPoint,
-  ])
+  }, [locationErrorCode, routeLegs, routeWaypoints, userLocationPoint])
 
   const cameraIntent = manualCameraIntent ?? automaticCameraIntent
 
@@ -470,7 +488,9 @@ export function useMultiStopRoutePlanner() {
       ? getLocationRejectionReason(userPosition)
       : null
 
-    return userLocationPolicyMessage ?? getLocationErrorMessage(locationErrorCode)
+    return (
+      userLocationPolicyMessage ?? getLocationErrorMessage(locationErrorCode)
+    )
   }, [locationErrorCode, userPosition, waypointMarkers.length])
 
   const handleLocateRequest = useCallback(() => {
@@ -495,35 +515,38 @@ export function useMultiStopRoutePlanner() {
     setManualCameraIntent(null)
   }, [])
 
-  const updateWaypointQuery = useCallback((waypointId: string, query: string) => {
-    setWaypoints((currentWaypoints) =>
-      currentWaypoints.map((waypoint) =>
-        waypoint.id !== waypointId
-          ? waypoint
-          : {
-              ...waypoint,
-              query,
-              selectedStop:
-                waypoint.selectedStop?.stopName === query
-                  ? waypoint.selectedStop
-                  : null,
-            }
-      )
-    )
-
-    setRouteWaypoints((currentWaypoints) =>
-      currentWaypoints.map((waypoint) =>
-        waypoint.id !== waypointId
-          ? waypoint
-          : waypoint.selectedStop?.stopName === query
+  const updateWaypointQuery = useCallback(
+    (waypointId: string, query: string) => {
+      setWaypoints((currentWaypoints) =>
+        currentWaypoints.map((waypoint) =>
+          waypoint.id !== waypointId
             ? waypoint
             : {
                 ...waypoint,
-                selectedStop: null,
+                query,
+                selectedStop:
+                  waypoint.selectedStop?.stopName === query
+                    ? waypoint.selectedStop
+                    : null,
               }
+        )
       )
-    )
-  }, [])
+
+      setRouteWaypoints((currentWaypoints) =>
+        currentWaypoints.map((waypoint) =>
+          waypoint.id !== waypointId
+            ? waypoint
+            : waypoint.selectedStop?.stopName === query
+              ? waypoint
+              : {
+                  ...waypoint,
+                  selectedStop: null,
+                }
+        )
+      )
+    },
+    []
+  )
 
   const selectWaypointStop = useCallback(
     (waypointId: string, stop: StopSearchResult) => {
@@ -535,7 +558,7 @@ export function useMultiStopRoutePlanner() {
                 ...waypoint,
                 query: stop.stopName,
                 selectedStop: stop,
-            }
+              }
         )
       )
 
@@ -563,7 +586,7 @@ export function useMultiStopRoutePlanner() {
               ...waypoint,
               query: "",
               selectedStop: null,
-          }
+            }
       )
     )
 
@@ -618,34 +641,30 @@ export function useMultiStopRoutePlanner() {
     })
   }, [])
 
-  const moveWaypoint = useCallback((waypointId: string, direction: -1 | 1) => {
+  const reorderWaypoint = useCallback((activeId: string, overId: string) => {
     setWaypoints((currentWaypoints) =>
-      moveWaypointInList(currentWaypoints, waypointId, direction)
+      reorderWaypointInList(currentWaypoints, activeId, overId)
     )
     setRouteWaypoints((currentWaypoints) =>
-      moveWaypointInList(currentWaypoints, waypointId, direction)
+      reorderWaypointInList(currentWaypoints, activeId, overId)
     )
   }, [])
 
   const clearTrip = useCallback(() => {
     setWaypoints((currentWaypoints) =>
-      currentWaypoints
-        .slice(0, DEFAULT_WAYPOINT_COUNT)
-        .map((waypoint) => ({
-          ...waypoint,
-          query: "",
-          selectedStop: null,
-        }))
+      currentWaypoints.slice(0, DEFAULT_WAYPOINT_COUNT).map((waypoint) => ({
+        ...waypoint,
+        query: "",
+        selectedStop: null,
+      }))
     )
 
     setRouteWaypoints((currentWaypoints) =>
-      currentWaypoints
-        .slice(0, DEFAULT_WAYPOINT_COUNT)
-        .map((waypoint) => ({
-          ...waypoint,
-          query: "",
-          selectedStop: null,
-        }))
+      currentWaypoints.slice(0, DEFAULT_WAYPOINT_COUNT).map((waypoint) => ({
+        ...waypoint,
+        query: "",
+        selectedStop: null,
+      }))
     )
   }, [])
 
@@ -660,8 +679,7 @@ export function useMultiStopRoutePlanner() {
       onWaypointSelect: selectWaypointStop,
       onWaypointClear: clearWaypoint,
       onWaypointRemove: removeWaypoint,
-      onWaypointMoveUp: (waypointId: string) => moveWaypoint(waypointId, -1),
-      onWaypointMoveDown: (waypointId: string) => moveWaypoint(waypointId, 1),
+      onWaypointReorder: reorderWaypoint,
       onAddWaypoint: addWaypoint,
       onClearTrip: clearTrip,
     },
