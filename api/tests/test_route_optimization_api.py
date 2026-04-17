@@ -18,8 +18,22 @@ from api.app.services.route_optimization_service import RouteOptimizationService
 
 
 class StubPredictionService:
-    def __init__(self, weights: dict[tuple[str, str], float]):
+    def __init__(
+        self,
+        weights: dict[tuple[str, str], float],
+        *,
+        unsupported_route_edges: set[tuple[str, str, str]] | None = None,
+    ):
         self.weights = weights
+        self.unsupported_route_edges = unsupported_route_edges or set()
+
+    def supports_segment_record(self, segment_record: dict) -> bool:
+        route_edge_key = (
+            str(segment_record["route_id"]),
+            str(segment_record["from_stop_id"]),
+            str(segment_record["to_stop_id"]),
+        )
+        return route_edge_key not in self.unsupported_route_edges
 
     def predict_segments(self, segment_records: list[dict]) -> list[dict[str, float]]:
         predictions = []
@@ -41,11 +55,20 @@ class StubPredictionService:
 
 
 class StubGraphService:
-    def __init__(self, graph: StaticTransitGraph):
+    def __init__(
+        self,
+        graph: StaticTransitGraph,
+        *,
+        search_results_by_query: dict[str, list[dict[str, str | float]]] | None = None,
+    ):
         self.graph = graph
+        self.search_results_by_query = search_results_by_query or {}
 
     def get_graph(self) -> StaticTransitGraph:
         return self.graph
+
+    def search_stops(self, query: str, *, limit: int = 8) -> list[dict[str, str | float]]:
+        return self.search_results_by_query.get(query, [])[:limit]
 
 
 class StubRealtimeWaitService:
@@ -187,6 +210,72 @@ class RouteOptimizationServiceTests(unittest.TestCase):
 
         with self.assertRaises(RouteNotFoundException):
             service.optimize_route("A", "D", 1742803800)
+
+    def test_service_falls_back_to_equivalent_stop_variants(self) -> None:
+        stops = {
+            "O1": StopNode("O1", "Origin Stop", 28.70, 77.10),
+            "O2": StopNode("O2", "Origin Stop Platform 2", 28.7005, 77.1005),
+            "B": StopNode("B", "Intermediate", 28.71, 77.11),
+            "D1": StopNode("D1", "Destination Stop", 28.72, 77.12),
+            "D2": StopNode("D2", "Destination Stop Platform 2", 28.7205, 77.1205),
+        }
+        edges = (
+            SegmentEdge("R1", "O1", "B", 1, 0.5, 1.0, 5.0),
+            SegmentEdge("R1", "B", "D2", 2, 1.0, 1.0, 5.0),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=edges,
+            edges_from_stop={
+                "O1": (edges[0],),
+                "B": (edges[1],),
+            },
+        )
+        graph_service = StubGraphService(
+            graph,
+            search_results_by_query={
+                "Origin Stop": [
+                    {
+                        "stop_id": "O1",
+                        "stop_name": "Origin Stop",
+                        "stop_lat": 28.70,
+                        "stop_lon": 77.10,
+                    },
+                    {
+                        "stop_id": "O2",
+                        "stop_name": "Origin Stop Platform 2",
+                        "stop_lat": 28.7005,
+                        "stop_lon": 77.1005,
+                    },
+                ],
+                "Destination Stop": [
+                    {
+                        "stop_id": "D1",
+                        "stop_name": "Destination Stop",
+                        "stop_lat": 28.72,
+                        "stop_lon": 77.12,
+                    },
+                    {
+                        "stop_id": "D2",
+                        "stop_name": "Destination Stop Platform 2",
+                        "stop_lat": 28.7205,
+                        "stop_lon": 77.1205,
+                    },
+                ],
+            },
+        )
+        prediction_service = StubPredictionService(
+            {
+                ("O1", "B"): 4.0,
+                ("B", "D2"): 4.0,
+            }
+        )
+        service = RouteOptimizationService(graph_service, prediction_service)
+
+        result = service.optimize_route("O1", "D1", 1742803800)
+
+        self.assertEqual([stop["stop_id"] for stop in result.stops], ["O1", "B", "D2"])
+        self.assertEqual(len(result.segments), 2)
 
     def test_service_scores_downstream_edges_with_arrival_time(self) -> None:
         class TimeAwarePredictionService:
@@ -401,6 +490,64 @@ class RouteOptimizationServiceTests(unittest.TestCase):
 
         self.assertEqual([stop["stop_id"] for stop in result.stops], ["A", "B", "C"])
         self.assertGreater(result.cost_breakdown["transfer_penalty_cost"], 0.0)
+
+    def test_service_falls_back_to_schedule_scoring_for_unsupported_route_edges(self) -> None:
+        query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)
+        stops = {
+            "A": StopNode("A", "Stop A", 28.70, 77.10),
+            "C": StopNode("C", "Stop C", 28.72, 77.12),
+        }
+        edge = SegmentEdge(
+            "R1",
+            "A",
+            "C",
+            1,
+            1.0,
+            2.0,
+            5.0,
+            (8 * 3600,),
+        )
+        graph = StaticTransitGraph(
+            stops_by_id=stops,
+            edges=(edge,),
+            edges_from_stop={"A": (edge,)},
+        )
+        prediction_service = StubPredictionService(
+            {("A", "C"): 0.1},
+            unsupported_route_edges={("R1", "A", "C")},
+        )
+        segment_contexts = {
+            ("R1", "A", "C"): type(
+                "SegmentContext",
+                (),
+                {
+                    "prev_segment_delay": 0.0,
+                    "rolling_segment_delay_3": 0.0,
+                    "route_delay_minutes_live": 6.0,
+                    "segment_slowdown_index": 1.2,
+                    "corridor_slowdown_score_live": 1.1,
+                    "bunching_indicator": 0.0,
+                    "headway_irregularity_score_live": 0.0,
+                    "stop_recent_arrival_gap_minutes": 0.0,
+                    "corridor_instability_score_live": 0.1,
+                    "service_quality_score": 0.9,
+                    "persistent_unreliability_penalty": 0.0,
+                },
+            )(),
+        }
+        realtime_service = StubRealtimeSegmentService(segment_contexts=segment_contexts)
+        service = RouteOptimizationService(
+            StubGraphService(graph),
+            prediction_service,
+            realtime_enrichment_service=realtime_service,
+        )
+
+        result = service.optimize_route("A", "C", query_timestamp)
+
+        self.assertEqual(result.segments[0]["prediction_source"], "scheduled_fallback")
+        self.assertFalse(result.segments[0]["model_supported"])
+        self.assertGreater(result.segments[0]["predicted_actual_segment_minutes"], 5.0)
+        self.assertGreater(result.total_predicted_eta_minutes, 5.0)
 
     def test_service_penalizes_unstable_corridor_when_eta_is_close(self) -> None:
         query_timestamp = scheduled_unix_from_service_date("20250401", 8 * 3600)

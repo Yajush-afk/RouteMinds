@@ -4,16 +4,19 @@ import type { MapRef } from "react-map-gl/maplibre"
 import MapCameraController from "@/features/map/components/MapCameraController"
 import MapCanvas from "@/features/map/components/MapCanvas"
 import FeatureMapControls from "@/features/map/components/controls/MapControls"
-import RouteConnectionLine from "@/features/map/components/layers/RouteConnectionLine"
+import PlannedRouteLines from "@/features/map/components/layers/PlannedRouteLines"
 import SelectedLocationMarker from "@/features/map/components/layers/SelectedLocationMarker"
-import type { CameraIntent, LngLat } from "@/features/map/domain/types"
+import type {
+  CameraIntent,
+  LngLat,
+  RouteLegPlan,
+  WaypointMarker,
+} from "@/features/map/domain/types"
 
 type MapViewportProps = {
-  originPoint: LngLat | null
-  routeOriginPoint: LngLat | null
-  showOriginMarker: boolean
+  waypointMarkers: WaypointMarker[]
+  routeLegs: RouteLegPlan[]
   userLocationPoint: LngLat | null
-  destinationPoint: LngLat | null
   isLocating: boolean
   locationMessage: string | null
   cameraIntent: CameraIntent | null
@@ -23,11 +26,9 @@ type MapViewportProps = {
 }
 
 function MapViewport({
-  originPoint,
-  routeOriginPoint,
-  showOriginMarker,
+  waypointMarkers,
+  routeLegs,
   userLocationPoint,
-  destinationPoint,
   isLocating,
   locationMessage,
   cameraIntent,
@@ -57,12 +58,7 @@ function MapViewport({
           intent={cameraIntent}
           onHandled={onCameraIntentHandled}
         />
-        {routeOriginPoint && destinationPoint && (
-          <RouteConnectionLine
-            origin={routeOriginPoint}
-            destination={destinationPoint}
-          />
-        )}
+        <PlannedRouteLines routeLegs={routeLegs} />
         {userLocationPoint && (
           <SelectedLocationMarker
             position={userLocationPoint}
@@ -71,20 +67,14 @@ function MapViewport({
             variant="user-location"
           />
         )}
-        {originPoint && showOriginMarker && (
+        {waypointMarkers.map((marker) => (
           <SelectedLocationMarker
-            position={originPoint}
-            badge="A"
-            tone="origin"
+            key={marker.id}
+            position={marker.position}
+            badge={marker.badge}
+            tone={marker.tone}
           />
-        )}
-        {destinationPoint && (
-          <SelectedLocationMarker
-            position={destinationPoint}
-            badge="B"
-            tone="destination"
-          />
-        )}
+        ))}
       </MapCanvas>
 
       {isLocating && (

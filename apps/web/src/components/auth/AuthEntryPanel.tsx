@@ -79,11 +79,8 @@ function InlineAlert({
   )
 }
 
-function buildPendingIdentifier(
-  value: string,
-  kind: "email" | "sms"
-): ParsedIdentifier {
-  return { kind, value }
+function buildPendingIdentifier(value: string): ParsedIdentifier {
+  return { kind: "email", value }
 }
 
 function buildCodeSentMessage(identifier: ParsedIdentifier) {
@@ -100,7 +97,6 @@ export default function AuthEntryPanel() {
     isLoading,
     loginWithGoogle,
     pendingIdentifier,
-    pendingIdentifierKind,
     startPasswordless,
     verifyOneTimePassword,
   } = useRouteMindsAuth()
@@ -119,7 +115,7 @@ export default function AuthEntryPanel() {
   const returnTo = normalizeReturnToPath(
     new URLSearchParams(location.search).get("returnTo")
   )
-  const hasPendingOtp = !!pendingIdentifier && !!pendingIdentifierKind
+  const hasPendingOtp = !!pendingIdentifier
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -128,17 +124,17 @@ export default function AuthEntryPanel() {
   }, [isAuthenticated, isLoading, navigate, returnTo])
 
   useEffect(() => {
-    if (!pendingIdentifier || !pendingIdentifierKind) {
+    if (!pendingIdentifier) {
       return
     }
 
     setIdentifierInput(pendingIdentifier)
     setNotice(
       `We sent a 6-digit code to ${maskIdentifier(
-        buildPendingIdentifier(pendingIdentifier, pendingIdentifierKind)
+        buildPendingIdentifier(pendingIdentifier)
       )}.`
     )
-  }, [pendingIdentifier, pendingIdentifierKind])
+  }, [pendingIdentifier])
 
   async function handleContinue() {
     setIdentifierError(null)
@@ -179,7 +175,7 @@ export default function AuthEntryPanel() {
   }
 
   async function handleResendCode() {
-    if (!pendingIdentifier || !pendingIdentifierKind) {
+    if (!pendingIdentifier) {
       return
     }
 
@@ -190,11 +186,7 @@ export default function AuthEntryPanel() {
 
     try {
       await startPasswordless(pendingIdentifier, returnTo)
-      setNotice(
-        buildCodeSentMessage(
-          buildPendingIdentifier(pendingIdentifier, pendingIdentifierKind)
-        )
-      )
+      setNotice(buildCodeSentMessage(buildPendingIdentifier(pendingIdentifier)))
     } catch (resendError) {
       setOtpError(
         resendError instanceof Error
@@ -234,7 +226,7 @@ export default function AuthEntryPanel() {
 
   const intro = hasPendingOtp
     ? "Enter the one-time code we just sent to finish signing in."
-    : "Enter your phone or email to receive a one-time code."
+    : "Enter your email to receive a one-time code."
 
   return (
     <div
@@ -254,7 +246,7 @@ export default function AuthEntryPanel() {
             <>
               <Field data-invalid={!!identifierError}>
                 <FieldLabel htmlFor="identifier" className="text-[#1d1d1d]">
-                  Phone or email
+                  Email
                 </FieldLabel>
                 <Input
                   id="identifier"
@@ -262,7 +254,7 @@ export default function AuthEntryPanel() {
                   inputMode="email"
                   value={identifierInput}
                   onChange={(event) => setIdentifierInput(event.target.value)}
-                  placeholder="+91 98765 43210 or name@example.com"
+                  placeholder="name@example.com"
                   aria-invalid={!!identifierError}
                   className="h-11 rounded-xl border-[#d8d8d3] bg-white px-3 text-[#151515] placeholder:text-[#8b8b85]"
                 />
@@ -346,10 +338,7 @@ export default function AuthEntryPanel() {
                 <FieldDescription className="text-[#696965]">
                   {pendingIdentifier
                     ? `Enter the code sent to ${maskIdentifier(
-                        buildPendingIdentifier(
-                          pendingIdentifier,
-                          pendingIdentifierKind
-                        )
+                        buildPendingIdentifier(pendingIdentifier)
                       )}.`
                     : "Enter the 6-digit code we sent you."}
                 </FieldDescription>
@@ -405,7 +394,7 @@ export default function AuthEntryPanel() {
                   disabled={pendingAction !== null}
                   className="cursor-pointer rounded-xl text-[#6d675a]"
                 >
-                  Use a different phone or email
+                  Use a different email
                 </Button>
               </div>
             </>
@@ -432,7 +421,7 @@ export default function AuthEntryPanel() {
 
           <p className="text-xs leading-5 text-[#6d6d66]">
             RouteMinds uses Supabase Auth for Google sign-in and one-time codes
-            over email or SMS.
+            over email.
           </p>
         </FieldGroup>
 

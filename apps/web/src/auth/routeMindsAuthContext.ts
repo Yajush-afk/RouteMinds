@@ -19,9 +19,9 @@ export type RouteMindsAuthContextValue = {
   loginWithGoogle: (returnTo: string) => Promise<void>
   verifyOneTimePassword: (token: string) => Promise<void>
   pendingIdentifier: string | null
-  pendingIdentifierKind: "email" | "sms" | null
+  pendingIdentifierKind: "email" | null
   clearPendingIdentifier: () => void
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 export const routeMindsAuthContext =

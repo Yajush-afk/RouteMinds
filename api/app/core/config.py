@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_JWT_ISSUER: str = ""
     SUPABASE_JWT_AUDIENCE: str = ""
-    SUPABASE_JWT_ALGORITHMS: str = "RS256"
+    SUPABASE_JWT_ALGORITHMS: str = "ES256,RS256"
     SUPABASE_REALTIME_REQUIRED_PERMISSION: str = "realtime:manage"
 
     MODEL_PATH: str = "artifacts/models/xgboost_segment_travel_time_model.joblib"

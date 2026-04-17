@@ -86,7 +86,7 @@ The frontend is built with:
 Current routes:
 
 - `/`: landing page
-- `/auth`: Supabase sign-in page with Google OAuth and one-time codes
+- `/auth`: Supabase sign-in page with Google OAuth and one-time email codes
 - `/map`: protected map screen
 
 The map experience currently focuses on:
@@ -157,6 +157,7 @@ The FastAPI app exposes the following routes under `/api/v1`:
 - `GET /api/v1/health`
 - `POST /api/v1/predictions/segments`
 - `GET /api/v1/stops/nearby`
+- `GET /api/v1/stops/search`
 - `POST /api/v1/routes/optimize`
 - `POST /api/v1/realtime/refresh`
 - `GET /api/v1/realtime/status`
@@ -164,7 +165,7 @@ The FastAPI app exposes the following routes under `/api/v1`:
 There is also a root route at `GET /` that returns app metadata and a docs pointer.
 
 The backend also exposes unversioned aliases for the current API surface such as
-`/auth/me`, `/health`, `/stops/nearby`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
+`/auth/me`, `/health`, `/stops/nearby`, `/stops/search`, `/predictions/segments`, `/routes/optimize`, and `/realtime/*`.
 
 ### Authentication Contract
 
@@ -173,6 +174,7 @@ The current backend authentication contract is:
 - authenticated: `GET /auth/me`, `GET /api/v1/auth/me`
 - public: `GET /health`, `GET /api/v1/health`
 - public: `POST /predictions/segments`, `POST /api/v1/predictions/segments`
+- public: `GET /stops/search`, `GET /api/v1/stops/search`
 - authenticated: `GET /stops/nearby`, `GET /api/v1/stops/nearby`
 - authenticated: `POST /routes/optimize`, `POST /api/v1/routes/optimize`
 - authenticated plus `realtime:manage`: `GET /realtime/status`, `GET /api/v1/realtime/status`
@@ -415,7 +417,7 @@ SUPABASE_AUTH_ENABLED=true
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_JWT_ISSUER=https://your-project-ref.supabase.co/auth/v1
 SUPABASE_JWT_AUDIENCE=authenticated
-SUPABASE_JWT_ALGORITHMS=RS256
+SUPABASE_JWT_ALGORITHMS=ES256,RS256
 SUPABASE_REALTIME_REQUIRED_PERMISSION=realtime:manage
 CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
@@ -424,7 +426,7 @@ Recommended production values:
 
 - set `SUPABASE_AUTH_ENABLED=true`
 - use the production Supabase project origin consistently in both `SUPABASE_URL` and `SUPABASE_JWT_ISSUER`
-- keep `SUPABASE_JWT_ALGORITHMS=RS256` unless the project is explicitly configured otherwise
+- keep `SUPABASE_JWT_ALGORITHMS` aligned with the project signing key type; `ES256,RS256` is a safe default for asymmetric Supabase projects
 - set `CORS_ALLOW_ORIGINS` only to your deployed frontend origins
 - do not leave localhost origins in production
 

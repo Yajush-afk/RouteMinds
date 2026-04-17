@@ -123,7 +123,7 @@ function getPendingIdentifierState() {
 
     if (
       parsed &&
-      (parsed.kind === "email" || parsed.kind === "sms") &&
+      parsed.kind === "email" &&
       typeof parsed.value === "string" &&
       parsed.value.trim()
     ) {
@@ -187,6 +187,33 @@ export default function SupabaseAuthProvider({ children }: Props) {
     })
   }, [])
 
+  const getAccessToken = useCallback(
+    async (options?: { forceRefresh?: boolean }) => {
+      const supabase = getSupabaseClient()
+      const getSession = async (forceRefresh = false) => {
+        if (forceRefresh) {
+          return supabase.auth.refreshSession()
+        }
+
+        return supabase.auth.getSession()
+      }
+      const { data, error } = await getSession(options?.forceRefresh)
+
+      if (error) {
+        throw error
+      }
+
+      const accessToken = data.session?.access_token?.trim()
+
+      if (!accessToken) {
+        throw new Error("Authenticated API access is not available.")
+      }
+
+      return accessToken
+    },
+    []
+  )
+
   useEffect(() => {
     if (configError) {
       setApiAccessTokenFactory(null)
@@ -206,11 +233,9 @@ export default function SupabaseAuthProvider({ children }: Props) {
         if (sessionError) {
           setError(sessionError)
         } else {
-          const accessToken = data.session?.access_token
-
           setError(null)
           setSession(data.session)
-          setApiAccessTokenFactory(accessToken ? async () => accessToken : null)
+          setApiAccessTokenFactory(data.session ? getAccessToken : null)
         }
 
         setIsLoading(false)
@@ -229,7 +254,7 @@ export default function SupabaseAuthProvider({ children }: Props) {
         setError(null)
 
         if (nextSession?.access_token) {
-          setApiAccessTokenFactory(async () => nextSession.access_token)
+          setApiAccessTokenFactory(getAccessToken)
           clearPendingIdentifier()
         } else {
           setApiAccessTokenFactory(null)
@@ -242,24 +267,7 @@ export default function SupabaseAuthProvider({ children }: Props) {
       subscription.unsubscribe()
       setApiAccessTokenFactory(null)
     }
-  }, [clearPendingIdentifier, configError])
-
-  const getAccessToken = useCallback(async () => {
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase.auth.getSession()
-
-    if (error) {
-      throw error
-    }
-
-    const accessToken = data.session?.access_token?.trim()
-
-    if (!accessToken) {
-      throw new Error("Authenticated API access is not available.")
-    }
-
-    return accessToken
-  }, [])
+  }, [clearPendingIdentifier, configError, getAccessToken])
 
   const startPasswordless = useCallback<
     RouteMindsAuthContextValue["startPasswordless"]
@@ -270,22 +278,13 @@ export default function SupabaseAuthProvider({ children }: Props) {
 
     setError(null)
 
-    const { error } =
-      identifier.kind === "email"
-        ? await supabase.auth.signInWithOtp({
-            email: identifier.value,
-            options: {
-              emailRedirectTo: `${window.location.origin}/auth?returnTo=${encodeURIComponent(normalizedReturnTo)}`,
-              shouldCreateUser: true,
-            },
-          })
-        : await supabase.auth.signInWithOtp({
-            phone: identifier.value,
-            options: {
-              channel: "sms",
-              shouldCreateUser: true,
-            },
-          })
+    const { error } = await supabase.auth.signInWithOtp({
+      email: identifier.value,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth?returnTo=${encodeURIComponent(normalizedReturnTo)}`,
+        shouldCreateUser: true,
+      },
+    })
 
     if (error) {
       setError(error)
@@ -324,24 +323,14 @@ export default function SupabaseAuthProvider({ children }: Props) {
 
       setError(null)
 
-      const { error } =
-        identifierState.pendingIdentifierKind === "email"
-          ? await supabase.auth.verifyOtp({
-              email: identifierState.pendingIdentifier,
-              token: normalizedToken,
-              type: "email",
-              options: {
-                redirectTo: `${window.location.origin}${readPendingReturnTo()}`,
-              },
-            })
-          : await supabase.auth.verifyOtp({
-              phone: identifierState.pendingIdentifier,
-              token: normalizedToken,
-              type: "sms",
-              options: {
-                redirectTo: `${window.location.origin}${readPendingReturnTo()}`,
-              },
-            })
+      const { error } = await supabase.auth.verifyOtp({
+        email: identifierState.pendingIdentifier,
+        token: normalizedToken,
+        type: "email",
+        options: {
+          redirectTo: `${window.location.origin}${readPendingReturnTo()}`,
+        },
+      })
 
       if (error) {
         setError(error)
@@ -375,11 +364,21 @@ export default function SupabaseAuthProvider({ children }: Props) {
     }
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     const supabase = getSupabaseClient()
+
     clearPendingIdentifier()
+    setSession(null)
+    setError(null)
+    setIsLoading(false)
     setApiAccessTokenFactory(null)
-    void supabase.auth.signOut()
+
+    const { error: signOutError } = await supabase.auth.signOut()
+
+    if (signOutError) {
+      setError(signOutError)
+      throw signOutError
+    }
   }, [clearPendingIdentifier])
 
   const value = useMemo<RouteMindsAuthContextValue>(

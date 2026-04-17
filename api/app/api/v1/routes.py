@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 
 from api.app.core.auth import require_auth
@@ -36,7 +38,8 @@ async def optimize_route(
     _claims: dict = Depends(require_auth),
 ) -> RouteOptimizationResponse:
     route_service = get_route_optimization_service()
-    result = route_service.optimize_route(
+    result = await asyncio.to_thread(
+        route_service.optimize_route,
         origin_stop_id=request.origin_stop_id,
         destination_stop_id=request.destination_stop_id,
         query_timestamp_unix=request.query_timestamp_unix,

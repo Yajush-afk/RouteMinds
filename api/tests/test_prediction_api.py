@@ -7,7 +7,7 @@ import httpx
 
 from api.app.core.config import settings
 from api.app.main import app
-from api.app.services.prediction_service import PredictionService
+from api.app.services.prediction_service import PredictionService, _normalize_edge_identifier
 
 
 def make_segment_payload() -> dict:
@@ -26,6 +26,27 @@ def make_segment_payload() -> dict:
 
 
 class PredictionServiceTests(unittest.TestCase):
+    def test_normalize_edge_identifier_handles_common_serialization_artifacts(self) -> None:
+        self.assertEqual(_normalize_edge_identifier(" 3928 "), "3928")
+        self.assertEqual(_normalize_edge_identifier("3928.0"), "3928")
+        self.assertEqual(_normalize_edge_identifier("R1"), "R1")
+
+    def test_supports_segment_record_normalizes_identifier_format(self) -> None:
+        service = PredictionService(
+            model_path="artifacts/models/xgboost_segment_travel_time_model.joblib",
+            schema_path="artifacts/models/xgboost_segment_travel_time_schema.json",
+        )
+        record = make_segment_payload()
+        record["route_id"] = "10001.0"
+        record["from_stop_id"] = " 3928"
+        record["to_stop_id"] = "3929 "
+
+        with patch(
+            "api.app.services.prediction_service.load_supported_route_edges",
+            return_value=frozenset({("10001", "3928", "3929")}),
+        ):
+            self.assertTrue(service.supports_segment_record(record))
+
     def test_service_returns_travel_time_and_delay_predictions(self) -> None:
         service = PredictionService(
             model_path="artifacts/models/xgboost_segment_travel_time_model.joblib",
@@ -78,6 +99,46 @@ class PredictionServiceTests(unittest.TestCase):
             predictions[0]["predicted_actual_segment_minutes"],
         )
         self.assertGreater(predictions[0]["congestion_proxy_ratio"], 1.0)
+
+    def test_service_guardrails_clip_extreme_supported_prediction(self) -> None:
+        service = PredictionService(
+            model_path="artifacts/models/xgboost_segment_travel_time_model.joblib",
+            schema_path="artifacts/models/xgboost_segment_travel_time_schema.json",
+        )
+        record = make_segment_payload()
+        record["scheduled_segment_minutes"] = 5.0
+
+        with patch.object(
+            service.predictor,
+            "predict_batch",
+            return_value=[107.0],
+        ):
+            predictions = service.predict_segments([record])
+
+        self.assertLess(predictions[0]["predicted_actual_segment_minutes"], 30.0)
+        self.assertGreater(predictions[0]["predicted_actual_segment_minutes"], 5.0)
+        self.assertEqual(predictions[0]["prediction_source"], "ml")
+        self.assertTrue(predictions[0]["model_supported"])
+
+    def test_unsupported_prediction_uses_guarded_ml_blend(self) -> None:
+        service = PredictionService(
+            model_path="artifacts/models/xgboost_segment_travel_time_model.joblib",
+            schema_path="artifacts/models/xgboost_segment_travel_time_schema.json",
+        )
+        record = make_segment_payload()
+        record["scheduled_segment_minutes"] = 5.0
+
+        with patch.object(
+            service.predictor,
+            "predict_batch",
+            return_value=[107.0],
+        ):
+            predictions = service.predict_segments_for_unsupported_edges([record])
+
+        self.assertLess(predictions[0]["predicted_actual_segment_minutes"], 20.0)
+        self.assertGreater(predictions[0]["predicted_actual_segment_minutes"], 5.0)
+        self.assertEqual(predictions[0]["prediction_source"], "scheduled_fallback")
+        self.assertFalse(predictions[0]["model_supported"])
 
     def test_service_clamps_negative_predicted_segment_minutes(self) -> None:
         service = PredictionService(

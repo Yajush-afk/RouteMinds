@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -49,6 +51,8 @@ class RouteSegmentPrediction(BaseModel):
     congestion_proxy_percent: float
     corridor_instability_score_live: float = Field(ge=0.0, le=1.0)
     service_quality_score: float = Field(ge=0.0, le=1.0)
+    prediction_source: Literal["ml", "scheduled_fallback"] = "ml"
+    model_supported: bool = True
     predicted_actual_segment_minutes: float
     predicted_segment_delay_minutes: float
     segment_uncertainty: float = Field(ge=0.0)

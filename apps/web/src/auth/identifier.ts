@@ -1,26 +1,30 @@
 export type ParsedIdentifier = {
-  kind: "email" | "sms"
+  kind: "email"
   value: string
 }
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function parseIdentifier(value: string): ParsedIdentifier {
   const normalized = value.trim()
 
   if (!normalized) {
-    throw new Error("Enter your phone number or email.")
+    throw new Error("Enter your email address.")
   }
 
-  if (normalized.includes("@")) {
-    return { kind: "email", value: normalized.toLowerCase() }
+  const normalizedEmail = normalized.toLowerCase()
+
+  if (!EMAIL_PATTERN.test(normalizedEmail)) {
+    if (!normalized.includes("@")) {
+      throw new Error(
+        "Phone number sign-in is no longer available. Use your email address instead."
+      )
+    }
+
+    throw new Error("Enter a valid email address.")
   }
 
-  const digits = normalized.replace(/[^\d+]/g, "")
-
-  if (digits.length < 10) {
-    throw new Error("Enter a valid phone number or email.")
-  }
-
-  return { kind: "sms", value: digits }
+  return { kind: "email", value: normalizedEmail }
 }
 
 export function maskIdentifier({ kind, value }: ParsedIdentifier) {

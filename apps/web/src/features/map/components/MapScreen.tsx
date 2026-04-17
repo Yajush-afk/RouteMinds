@@ -1,9 +1,11 @@
 import { LoaderCircle, MonitorSmartphone } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
+import { useRouteMindsAuth } from "@/auth/useRouteMindsAuth"
 import MapViewport from "@/features/map/components/MapViewport"
-import MapSearchPanel from "@/features/map/components/search/MapSearchPanel"
+import MapRouteSidebar from "@/features/map/components/sidebar/MapRouteSidebar"
 import { useMapScreenState } from "@/features/map/hooks/useMapScreenState"
+import { SidebarInset, SidebarProvider } from "@workspace/ui/components/sidebar"
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile"
 
 const MAP_SPINNER_DELAY_MS = 400
@@ -19,7 +21,7 @@ function MapScreen() {
           <div className="mx-auto mb-5 grid size-14 place-items-center rounded-2xl bg-sky-50 text-sky-600 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.12)]">
             <MonitorSmartphone className="size-7" />
           </div>
-          <h1 className="text-pretty text-xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-xl font-semibold tracking-tight text-pretty text-slate-900">
             Map is desktop only
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -36,7 +38,8 @@ function MapScreen() {
 }
 
 function DesktopMapScreen() {
-  const { mapViewportProps, searchPanelProps } = useMapScreenState()
+  const { logout, user } = useRouteMindsAuth()
+  const { mapViewportProps, sidebarProps } = useMapScreenState()
   const [isMapReady, setIsMapReady] = useState(false)
   const [shouldShowSpinner, setShouldShowSpinner] = useState(false)
   const delayTimeoutRef = useRef<number | null>(null)
@@ -64,17 +67,21 @@ function DesktopMapScreen() {
   }
 
   return (
-    <section className="relative h-screen w-full">
-      <MapViewport {...mapViewportProps} onMapReady={handleMapReady} />
-      <MapSearchPanel {...searchPanelProps} />
-      {shouldShowSpinner && !isMapReady ? (
-        <div className="absolute inset-0 z-950 grid place-items-center bg-background/72 backdrop-blur-[2px]">
-          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card/92 px-6 py-5 text-card-foreground shadow-lg ring-1 ring-border/60">
-            <LoaderCircle className="size-6 animate-spin text-sky-600" />
-            <p className="text-sm font-medium">Loading map</p>
-          </div>
-        </div>
-      ) : null}
+    <section className="h-screen w-full">
+      <SidebarProvider width="24rem" className="relative h-full">
+        <MapRouteSidebar {...sidebarProps} user={user} onSignOut={logout} />
+        <SidebarInset className="bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_32%),linear-gradient(180deg,_#edf5ff_0%,_#f8fbff_24%,_#ffffff_100%)]">
+          <MapViewport {...mapViewportProps} onMapReady={handleMapReady} />
+          {shouldShowSpinner && !isMapReady ? (
+            <div className="absolute inset-0 z-950 grid place-items-center bg-background/72 backdrop-blur-[2px]">
+              <div className="flex flex-col items-center gap-3 rounded-2xl bg-card/92 px-6 py-5 text-card-foreground shadow-lg ring-1 ring-border/60">
+                <LoaderCircle className="size-6 animate-spin text-sky-600" />
+                <p className="text-sm font-medium">Loading map</p>
+              </div>
+            </div>
+          ) : null}
+        </SidebarInset>
+      </SidebarProvider>
     </section>
   )
 }

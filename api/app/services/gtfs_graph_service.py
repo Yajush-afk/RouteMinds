@@ -85,6 +85,14 @@ class TripStopEvent:
     departure_seconds: int
 
 
+@dataclass(frozen=True, slots=True)
+class SearchableStopRecord:
+    stop: StopNode
+    normalized_stop_name: str
+    token_set: frozenset[str]
+    popularity_weight: int
+
+
 def resolve_gtfs_path(value: str | Path) -> Path:
     path = Path(value)
     if path.is_absolute():
@@ -340,6 +348,26 @@ def build_static_transit_graph(gtfs_dir: str) -> StaticTransitGraph:
     )
 
 
+@lru_cache(maxsize=4)
+def build_stop_search_records(gtfs_dir: str) -> tuple[SearchableStopRecord, ...]:
+    graph = build_static_transit_graph(gtfs_dir)
+    stop_usage_counts = GTFSGraphService._build_stop_usage_counts(graph)
+    searchable_stops: list[SearchableStopRecord] = []
+    for stop in graph.stops_by_id.values():
+        normalized_stop_name = GTFSGraphService._normalize_stop_search_text(stop.stop_name)
+        searchable_stops.append(
+            SearchableStopRecord(
+                stop=stop,
+                normalized_stop_name=normalized_stop_name,
+                token_set=frozenset(
+                    token for token in normalized_stop_name.split(" ") if token
+                ),
+                popularity_weight=stop_usage_counts.get(stop.stop_id, 0),
+            )
+        )
+    return tuple(searchable_stops)
+
+
 class GTFSGraphService:
     def __init__(self, gtfs_static_dir: str | Path):
         self.gtfs_static_dir = resolve_gtfs_path(gtfs_static_dir)
@@ -392,21 +420,20 @@ class GTFSGraphService:
             return []
 
         query_tokens = tuple(token for token in normalized_query.split(" ") if token)
-        graph = self.get_graph()
-        stop_usage_counts = self._build_stop_usage_counts(graph)
         scored_matches: list[tuple[float, StopNode]] = []
+        searchable_stops = build_stop_search_records(str(self.gtfs_static_dir))
 
-        for stop in graph.stops_by_id.values():
-            normalized_stop_name = self._normalize_stop_search_text(stop.stop_name)
+        for record in searchable_stops:
             score = self._stop_search_score(
                 normalized_query=normalized_query,
                 query_tokens=query_tokens,
-                normalized_stop_name=normalized_stop_name,
-                popularity_weight=stop_usage_counts.get(stop.stop_id, 0),
+                normalized_stop_name=record.normalized_stop_name,
+                stop_tokens=record.token_set,
+                popularity_weight=record.popularity_weight,
             )
             if score <= 0.0:
                 continue
-            scored_matches.append((score, stop))
+            scored_matches.append((score, record.stop))
 
         scored_matches.sort(
             key=lambda item: (-item[0], item[1].stop_name.lower(), item[1].stop_id)
@@ -455,6 +482,7 @@ class GTFSGraphService:
         normalized_query: str,
         query_tokens: tuple[str, ...],
         normalized_stop_name: str,
+        stop_tokens: frozenset[str],
         popularity_weight: int,
     ) -> float:
         if not normalized_stop_name:
@@ -466,7 +494,6 @@ class GTFSGraphService:
         elif normalized_query in normalized_stop_name:
             textual_score = 60.0 - normalized_stop_name.index(normalized_query) * 0.1
         else:
-            stop_tokens = set(normalized_stop_name.split(" "))
             matched_tokens = sum(1 for token in query_tokens if token in stop_tokens)
             token_coverage_score = 0.0
             if matched_tokens > 0:
