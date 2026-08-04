@@ -71,6 +71,7 @@ class SegmentLiveContext:
     last_update_timestamp: int
     vehicle_id: str
     trip_id: str
+    observation_count: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -876,6 +877,7 @@ class RealtimeEnrichmentService:
             last_update_timestamp=snapshot.snapshot_time,
             vehicle_id=snapshot.vehicle_id,
             trip_id=snapshot.trip_id,
+            observation_count=len(history),
         )
         self.latest_vehicle_snapshot[snapshot.vehicle_id] = snapshot
         self.latest_vehicle_observation[snapshot.vehicle_id] = segment_observation

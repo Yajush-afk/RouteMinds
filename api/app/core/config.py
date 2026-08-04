@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     MODEL_PATH: str = "artifacts/models/xgboost_segment_travel_time_model.joblib"
     SCHEMA_PATH: str = "artifacts/models/xgboost_segment_travel_time_schema.json"
+    MODEL_V2_MANIFEST_PATH: str = ""
     GTFS_STATIC_DIR: str = "data/raw"
     GTFS_RT_VEHICLE_POSITIONS_URL: str = "https://otd.delhi.gov.in/api/realtime/VehiclePositions.pb"
     GTFS_RT_API_KEY: str = ""

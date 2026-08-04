@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import heapq
+import time
 from collections import deque
 from dataclasses import dataclass
 from itertools import count
@@ -1030,6 +1031,9 @@ class RouteOptimizationService:
         bunching_indicator = 0.0
         headway_irregularity_score_live = 0.0
         stop_recent_arrival_gap_minutes = 0.0
+        live_context_age_seconds = 0.0
+        live_context_observation_count = 0.0
+        live_context_available = 0.0
         if self.realtime_enrichment_service:
             live_context = self.realtime_enrichment_service.get_segment_live_context(
                 edge.route_id,
@@ -1037,6 +1041,21 @@ class RouteOptimizationService:
                 edge.to_stop_id,
             )
             if live_context:
+                live_context_available = 1.0
+                live_context_age_seconds = max(
+                    0.0,
+                    float(
+                        int(time.time())
+                        - getattr(
+                            live_context,
+                            "last_update_timestamp",
+                            int(time.time()),
+                        )
+                    ),
+                )
+                live_context_observation_count = float(
+                    getattr(live_context, "observation_count", 1)
+                )
                 prev_segment_delay = live_context.prev_segment_delay
                 rolling_segment_delay_3 = live_context.rolling_segment_delay_3
                 route_delay_minutes_live = live_context.route_delay_minutes_live
@@ -1087,6 +1106,10 @@ class RouteOptimizationService:
             "bunching_indicator": bunching_indicator,
             "headway_irregularity_score_live": headway_irregularity_score_live,
             "stop_recent_arrival_gap_minutes": stop_recent_arrival_gap_minutes,
+            "live_context_age_seconds": live_context_age_seconds,
+            "live_context_observation_count": live_context_observation_count,
+            "live_context_available": live_context_available,
+            "reconstruction_confidence_score": 1.0,
         }
 
     def _generalized_cost_breakdown(
@@ -1443,6 +1466,18 @@ class RouteOptimizationService:
                         "predicted_actual_segment_minutes"
                     ],
                 ),
+                "model_version": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("model_version", "legacy-v1"),
+                "live_context_used": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("live_context_used", False),
+                "feature_quality_score": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("feature_quality_score", 0.5),
+                "prediction_interval_method": edge_prediction_cache[
+                    (step.edge, step.scheduled_departure_unix)
+                ].get("prediction_interval_method", "fallback"),
             }
             for step in route_steps
         ]

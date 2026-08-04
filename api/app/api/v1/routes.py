@@ -24,6 +24,7 @@ def get_route_optimization_service() -> RouteOptimizationService:
     prediction_service = PredictionService(
         model_path=settings.MODEL_PATH,
         schema_path=settings.SCHEMA_PATH,
+        v2_manifest_path=settings.MODEL_V2_MANIFEST_PATH or None,
     )
     return RouteOptimizationService(
         graph_service,
