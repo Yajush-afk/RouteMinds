@@ -1,15 +1,22 @@
-from api.app.services.gtfs_graph_service import GTFSGraphService
-from api.app.services.prediction_service import PredictionService
-from api.app.services.realtime_enrichment_service import (
-    GTFSRealtimeIngestionService,
-    RealtimeEnrichmentService,
-)
-from api.app.services.route_optimization_service import RouteOptimizationService
+from __future__ import annotations
 
-__all__ = [
-    "GTFSGraphService",
-    "GTFSRealtimeIngestionService",
-    "PredictionService",
-    "RealtimeEnrichmentService",
-    "RouteOptimizationService",
-]
+from importlib import import_module
+
+_SERVICE_MODULES = {
+    "GTFSGraphService": "api.app.services.gtfs_graph_service",
+    "GTFSRealtimeIngestionService": "api.app.services.realtime_enrichment_service",
+    "PredictionService": "api.app.services.prediction_service",
+    "RealtimeEnrichmentService": "api.app.services.realtime_enrichment_service",
+    "RouteOptimizationService": "api.app.services.route_optimization_service",
+}
+
+__all__ = list(_SERVICE_MODULES)
+
+
+def __getattr__(name: str):
+    module_name = _SERVICE_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(name)
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value

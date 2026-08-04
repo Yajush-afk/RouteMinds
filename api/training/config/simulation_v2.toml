@@ -1,0 +1,25 @@
+[simulation]
+seed = 42
+start_service_date = "20250401"
+service_days = 28
+max_rows = 2000000
+output_dir = "data/processed/ml/simulation_v2_raw"
+chunk_rows = 50000
+minimum_free_disk_gb = 10.0
+
+[slowdown]
+morning_peak_start_hour = 7
+morning_peak_end_hour = 10
+evening_peak_start_hour = 16
+evening_peak_end_hour = 20
+morning_peak_multiplier = 1.20
+evening_peak_multiplier = 1.25
+off_peak_multiplier = 1.0
+route_log_sigma = 0.10
+corridor_log_sigma = 0.08
+trip_log_sigma = 0.10
+segment_log_sigma = 0.12
+trip_correlation = 0.85
+minimum_ratio = 0.25
+maximum_ratio = 4.5
+minimum_segment_minutes = 0.10

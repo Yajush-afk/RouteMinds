@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from api.app.services.realtime_enrichment_service import (
@@ -25,6 +27,11 @@ DEFAULT_OUTPUT_DIR = "data/processed/realtime/reconstructed_segments_v1"
 DEFAULT_REPORT_PATH = "artifacts/metrics/realtime_segment_reconstruction_report_v1.json"
 DEFAULT_GTFS_STATIC_DIR = "data/raw"
 DEFAULT_MAX_SERVICE_DATES = 0
+DEFAULT_AUDIT_PATH = "artifacts/metrics/realtime_trace_audit_v2.json"
+TRACE_GAP_SECONDS = 30 * 60
+MAX_TRACE_MATCH_DISTANCE_KM = 1.0
+START_TIME_TOLERANCE_MINUTES = 10
+AUDIT_TRACE_LIMIT = 200
 
 TRACE_GROUP_COLUMNS = [
     "service_date",
@@ -120,6 +127,7 @@ class InferredSegmentSnapshot:
     scheduled_segment_minutes: float
     normalized_stop_position: float
     distance_to_prev_stop_km: float
+    match_distance_km: float
 
 
 @dataclass(slots=True)
@@ -148,6 +156,7 @@ class SegmentRun:
     start_snapshot_timestamp_unix: int
     end_snapshot_timestamp_unix: int
     observation_count: int
+    match_distances_km: list[float]
 
 
 @dataclass(slots=True)
@@ -169,6 +178,9 @@ class ReconstructionStats:
     supervised_training_eligible_segments: int = 0
     estimated_start_boundaries: int = 0
     estimated_end_boundaries: int = 0
+    trace_windows: int = 0
+    spatial_sequence_matches: int = 0
+    traces_rejected_distance: int = 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -190,6 +202,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Delete existing output files by overwriting service-date Parquet outputs.",
     )
+    parser.add_argument("--audit-path", default=DEFAULT_AUDIT_PATH)
     return parser.parse_args()
 
 
@@ -385,7 +398,9 @@ def _infer_segment_snapshot(
             effective_start_date,
             midpoint_seconds,
         )
-        time_alignment_penalty = abs(snapshot.gps_timestamp - scheduled_midpoint_unix) / 60.0
+        time_alignment_minutes = abs(snapshot.gps_timestamp - scheduled_midpoint_unix) / 60.0
+        # Geometry must dominate. Schedule time only breaks ties for delayed vehicles.
+        time_alignment_penalty = min(60.0, time_alignment_minutes) * 0.02
 
         progression_penalty = 0.0
         if previous_snapshot is not None and previous_inferred is not None:
@@ -430,6 +445,7 @@ def _infer_segment_snapshot(
             scheduled_segment_minutes=float(template["scheduled_segment_minutes"]),
             normalized_stop_position=float(template["normalized_stop_position"]),
             distance_to_prev_stop_km=float(template["distance_to_prev_stop_km"]),
+            match_distance_km=midpoint_distance,
         )
 
     return best_candidate
@@ -480,6 +496,7 @@ def _build_segment_runs_for_trace(
             runs[-1].end_gps_timestamp = snapshot.gps_timestamp
             runs[-1].end_snapshot_timestamp_unix = snapshot.snapshot_time
             runs[-1].observation_count += 1
+            runs[-1].match_distances_km.append(inferred.match_distance_km)
         else:
             runs.append(
                 SegmentRun(
@@ -488,7 +505,7 @@ def _build_segment_runs_for_trace(
                     static_route_id=inferred.static_route_id,
                     static_trip_id=inferred.static_trip_id,
                     vehicle_id=snapshot.vehicle_id,
-                    service_date=str(getattr(row, "service_date")),
+                    service_date=effective_start_date,
                     start_date=snapshot.start_date,
                     effective_start_date=effective_start_date,
                     start_time=snapshot.start_time,
@@ -507,10 +524,15 @@ def _build_segment_runs_for_trace(
                     start_snapshot_timestamp_unix=snapshot.snapshot_time,
                     end_snapshot_timestamp_unix=snapshot.snapshot_time,
                     observation_count=1,
+                    match_distances_km=[inferred.match_distance_km],
                 )
             )
         previous_inferred = inferred
 
+    all_distances = [distance for run in runs for distance in run.match_distances_km]
+    if all_distances and float(pd.Series(all_distances).median()) > MAX_TRACE_MATCH_DISTANCE_KM:
+        stats.traces_rejected_distance += 1
+        return []
     stats.segment_runs += len(runs)
     return runs
 
@@ -530,6 +552,8 @@ def _reconstruction_confidence(
     used_estimated_start_boundary: bool,
     used_estimated_end_boundary: bool,
     observation_count: int,
+    match_strategy: str,
+    median_match_distance_km: float,
 ) -> float:
     confidence = 1.0
     if used_estimated_start_boundary:
@@ -538,6 +562,15 @@ def _reconstruction_confidence(
         confidence -= 0.25
     if observation_count <= 1:
         confidence -= 0.15
+    if match_strategy == "spatial_sequence_match":
+        confidence -= 0.10
+    elif match_strategy not in {
+        "exact_trip_id",
+        "exact_route_start",
+        "public_route_start_unique",
+    }:
+        confidence -= 0.20
+    confidence -= min(0.25, max(0.0, median_match_distance_km) * 0.25)
     if scheduled_segment_minutes > 0.0:
         ratio = actual_segment_minutes / scheduled_segment_minutes
         if ratio < 0.33 or ratio > 3.5:
@@ -625,6 +658,8 @@ def _reconstruct_segments_from_runs(
             used_estimated_start_boundary=used_estimated_start_boundary,
             used_estimated_end_boundary=used_estimated_end_boundary,
             observation_count=run.observation_count,
+            match_strategy=run.match_strategy,
+            median_match_distance_km=float(pd.Series(run.match_distances_km).median()),
         )
         if confidence < 0.5:
             stats.low_confidence_segments += 1
@@ -689,6 +724,139 @@ def _load_service_date_frame(service_date_dir: Path) -> pd.DataFrame:
     return frame.sort_values(TRACE_GROUP_COLUMNS + TRACE_SORT_COLUMNS).reset_index(drop=True)
 
 
+def _split_trace_windows(trace_frame: pd.DataFrame) -> list[pd.DataFrame]:
+    ordered = trace_frame.sort_values(TRACE_SORT_COLUMNS).reset_index(drop=True)
+    if ordered.empty:
+        return []
+    gaps = pd.to_numeric(ordered["gps_timestamp"], errors="coerce").diff().fillna(0)
+    window_ids = (gaps > TRACE_GAP_SECONDS).cumsum()
+    return [window.reset_index(drop=True) for _, window in ordered.groupby(window_ids, sort=True)]
+
+
+def _derive_trace_speed(frame: pd.DataFrame) -> pd.Series:
+    ordered = frame.sort_values(TRACE_SORT_COLUMNS)
+    previous_lat = ordered["latitude"].shift(1)
+    previous_lon = ordered["longitude"].shift(1)
+    elapsed = pd.to_numeric(ordered["gps_timestamp"], errors="coerce").diff()
+    speeds: list[float] = []
+    for index, row in enumerate(ordered.itertuples(index=False)):
+        if index == 0 or elapsed.iloc[index] <= 0:
+            speeds.append(0.0)
+            continue
+        distance_km = haversine_km(
+            float(previous_lat.iloc[index]),
+            float(previous_lon.iloc[index]),
+            float(row.latitude),
+            float(row.longitude),
+        )
+        speeds.append((distance_km * 1000.0) / float(elapsed.iloc[index]))
+    result = pd.Series(speeds, index=ordered.index, dtype="float64")
+    return result.reindex(frame.index).fillna(0.0)
+
+
+def _hh_mm_to_minutes(value: str) -> int | None:
+    try:
+        hours, minutes = (int(part) for part in value[:5].split(":"))
+    except (TypeError, ValueError):
+        return None
+    return hours * 60 + minutes
+
+
+def _nearby_start_candidates(
+    index: dict[tuple[str, str], tuple[TripTemplateBundle, ...]],
+    route_id: str,
+    start_time: str,
+) -> tuple[TripTemplateBundle, ...]:
+    requested = _hh_mm_to_minutes(start_time)
+    if requested is None:
+        return ()
+    candidates: list[TripTemplateBundle] = []
+    for (candidate_route, candidate_time), bundles in index.items():
+        if candidate_route != route_id:
+            continue
+        candidate_minutes = _hh_mm_to_minutes(candidate_time)
+        if candidate_minutes is None:
+            continue
+        if abs(candidate_minutes - requested) <= START_TIME_TOLERANCE_MINUTES:
+            candidates.extend(bundles)
+    return tuple(candidates)
+
+
+def _trace_bundle_score(
+    trace_frame: pd.DataFrame,
+    bundle: TripTemplateBundle,
+    effective_start_date: str,
+) -> float:
+    distances: list[float] = []
+    previous_snapshot: VehiclePositionSnapshot | None = None
+    previous_inferred: InferredSegmentSnapshot | None = None
+    sample = trace_frame.sort_values(TRACE_SORT_COLUMNS)
+    if len(sample) > 50:
+        sample = sample.iloc[
+            np.linspace(0, len(sample) - 1, 50, dtype=int)
+        ]
+    for row in sample.itertuples(index=False):
+        snapshot = VehiclePositionSnapshot(
+            vehicle_id=str(row.vehicle_id),
+            trip_id=str(row.trip_id),
+            route_id=str(row.route_id),
+            start_time=str(row.start_time),
+            start_date=str(row.start_date),
+            latitude=float(row.latitude),
+            longitude=float(row.longitude),
+            speed_mps=float(row.speed_mps),
+            gps_timestamp=int(row.gps_timestamp),
+            snapshot_time=int(row.snapshot_timestamp_unix),
+        )
+        inferred = _infer_segment_snapshot(
+            snapshot=snapshot,
+            bundle=bundle,
+            effective_start_date=effective_start_date,
+            segment_templates=bundle.segment_templates,
+            previous_snapshot=previous_snapshot,
+            previous_inferred=previous_inferred,
+        )
+        if inferred is None:
+            continue
+        distances.append(inferred.match_distance_km)
+        previous_snapshot = snapshot
+        previous_inferred = inferred
+    if not distances:
+        return math.inf
+    return float(pd.Series(distances).median())
+
+
+def _select_sequence_candidate(
+    candidates: tuple[TripTemplateBundle, ...],
+    trace_frame: pd.DataFrame,
+    effective_start_date: str,
+    requested_start_time: str,
+) -> TripTemplateBundle | None:
+    if not candidates:
+        return None
+    requested_minutes = _hh_mm_to_minutes(requested_start_time)
+    ordered_candidates = candidates
+    if requested_minutes is not None:
+        ordered_candidates = tuple(
+            sorted(
+                candidates,
+                key=lambda bundle: abs(
+                    (_hh_mm_to_minutes(bundle.start_time_key) or 0) - requested_minutes
+                ),
+            )
+        )
+    scored = sorted(
+        (
+            (_trace_bundle_score(trace_frame, bundle, effective_start_date), bundle)
+            for bundle in ordered_candidates[:50]
+        ),
+        key=lambda item: item[0],
+    )
+    if not scored or scored[0][0] > MAX_TRACE_MATCH_DISTANCE_KM:
+        return None
+    return scored[0][1]
+
+
 def _resolve_trace_alignment(
     *,
     group_key: tuple[object, ...],
@@ -696,6 +864,8 @@ def _resolve_trace_alignment(
     route_start_index: dict[tuple[str, str], tuple[TripTemplateBundle, ...]],
     public_route_start_index: dict[tuple[str, str], tuple[TripTemplateBundle, ...]],
     public_route_index: dict[str, tuple[TripTemplateBundle, ...]],
+    trace_frame: pd.DataFrame | None = None,
+    effective_start_date: str | None = None,
 ) -> MatchResolution:
     realtime_route_id = str(group_key[1])
     realtime_trip_id = str(group_key[2])
@@ -721,9 +891,19 @@ def _resolve_trace_alignment(
         )
     if len(route_start_candidates) > 1:
         route_ids, trip_ids = _candidate_ids(route_start_candidates)
+        selected = (
+            _select_sequence_candidate(
+                route_start_candidates,
+                trace_frame,
+                effective_start_date,
+                start_time_key,
+            )
+            if trace_frame is not None and effective_start_date
+            else None
+        )
         return MatchResolution(
-            bundle=None,
-            strategy="ambiguous_exact_route_start",
+            bundle=selected,
+            strategy=("spatial_sequence_match" if selected else "ambiguous_exact_route_start"),
             candidate_static_route_ids=route_ids,
             candidate_static_trip_ids=trip_ids,
         )
@@ -742,19 +922,64 @@ def _resolve_trace_alignment(
         )
     if len(public_route_start_candidates) > 1:
         route_ids, trip_ids = _candidate_ids(public_route_start_candidates)
+        selected = (
+            _select_sequence_candidate(
+                public_route_start_candidates,
+                trace_frame,
+                effective_start_date,
+                start_time_key,
+            )
+            if trace_frame is not None and effective_start_date
+            else None
+        )
         return MatchResolution(
-            bundle=None,
-            strategy="public_route_start_ambiguous",
+            bundle=selected,
+            strategy=("spatial_sequence_match" if selected else "public_route_start_ambiguous"),
             candidate_static_route_ids=route_ids,
             candidate_static_trip_ids=trip_ids,
         )
 
+    nearby_candidates = _nearby_start_candidates(
+        public_route_start_index,
+        realtime_route_id,
+        start_time_key,
+    )
+    if nearby_candidates:
+        route_ids, trip_ids = _candidate_ids(nearby_candidates)
+        selected = (
+            _select_sequence_candidate(
+                nearby_candidates,
+                trace_frame,
+                effective_start_date,
+                start_time_key,
+            )
+            if trace_frame is not None and effective_start_date
+            else (nearby_candidates[0] if len(nearby_candidates) == 1 else None)
+        )
+        if selected:
+            return MatchResolution(
+                bundle=selected,
+                strategy="spatial_sequence_match",
+                candidate_static_route_ids=route_ids,
+                candidate_static_trip_ids=trip_ids,
+            )
+
     public_route_candidates = public_route_index.get(realtime_route_id, ())
     if public_route_candidates:
         route_ids, trip_ids = _candidate_ids(public_route_candidates)
+        selected = (
+            _select_sequence_candidate(
+                public_route_candidates,
+                trace_frame,
+                effective_start_date,
+                start_time_key,
+            )
+            if trace_frame is not None and effective_start_date
+            else None
+        )
         return MatchResolution(
-            bundle=None,
-            strategy="public_route_candidates_only",
+            bundle=selected,
+            strategy=("spatial_sequence_match" if selected else "public_route_candidates_only"),
             candidate_static_route_ids=route_ids,
             candidate_static_trip_ids=trip_ids,
         )
@@ -773,6 +998,61 @@ def _update_alignment_stats(stats: ReconstructionStats, resolution: MatchResolut
         stats.ambiguous_public_route_matches += 1
     elif resolution.strategy == "unresolved":
         stats.unresolved_traces += 1
+    elif resolution.strategy == "spatial_sequence_match":
+        stats.spatial_sequence_matches += 1
+
+
+def _trace_audit_record(
+    *,
+    group_key: tuple[object, ...],
+    window_index: int,
+    trace_frame: pd.DataFrame,
+    resolution: MatchResolution,
+    effective_start_date: str,
+    runs: list[SegmentRun],
+) -> dict[str, object]:
+    sample = trace_frame.sort_values(TRACE_SORT_COLUMNS)
+    if len(sample) > 50:
+        sample = sample.iloc[np.linspace(0, len(sample) - 1, 50, dtype=int)]
+    observations = [
+        {
+            "gps_timestamp": int(row.gps_timestamp),
+            "latitude": float(row.latitude),
+            "longitude": float(row.longitude),
+            "provider_speed_mps": float(row.speed_mps),
+            "derived_speed_mps": float(row.derived_speed_mps),
+        }
+        for row in sample.itertuples(index=False)
+    ]
+    distances = [distance for run in runs for distance in run.match_distances_km]
+    return {
+        "service_date": str(group_key[0]),
+        "realtime_route_id": str(group_key[1]),
+        "realtime_trip_id": str(group_key[2]),
+        "vehicle_id": str(group_key[3]),
+        "window_index": window_index,
+        "effective_start_date": effective_start_date,
+        "match_strategy": resolution.strategy,
+        "matched_static_route_id": (
+            resolution.bundle.static_route_id if resolution.bundle else None
+        ),
+        "matched_static_trip_id": (
+            resolution.bundle.static_trip_id if resolution.bundle else None
+        ),
+        "candidate_static_trip_ids": list(resolution.candidate_static_trip_ids),
+        "median_match_distance_km": (
+            float(pd.Series(distances).median()) if distances else None
+        ),
+        "inferred_stop_sequence": [run.to_stop_sequence for run in runs],
+        "monotonic_stop_progression": all(
+            current >= previous
+            for previous, current in zip(
+                [run.to_stop_sequence for run in runs],
+                [run.to_stop_sequence for run in runs][1:],
+            )
+        ),
+        "observations": observations,
+    }
 
 
 def reconstruct_segments_for_service_date(
@@ -783,6 +1063,7 @@ def reconstruct_segments_for_service_date(
     public_route_start_index: dict[tuple[str, str], tuple[TripTemplateBundle, ...]],
     public_route_index: dict[str, tuple[TripTemplateBundle, ...]],
     stats: ReconstructionStats,
+    audit_rows: list[dict[str, object]] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if service_date_frame.empty:
         return pd.DataFrame(columns=OUTPUT_COLUMNS), pd.DataFrame(columns=ALIGNMENT_SUMMARY_COLUMNS)
@@ -791,40 +1072,58 @@ def reconstruct_segments_for_service_date(
     alignment_rows: list[dict[str, object]] = []
     grouped = service_date_frame.groupby(TRACE_GROUP_COLUMNS, sort=False)
     for group_key, trace_frame in grouped:
-        stats.traces_seen += 1
-        effective_start_date, used_date_override = _resolve_effective_start_date(
-            str(group_key[4]),
-            int(trace_frame.iloc[0]["gps_timestamp"]),
-        )
-        if used_date_override:
-            stats.traces_with_effective_date_override += 1
-        resolution = _resolve_trace_alignment(
-            group_key=group_key,
-            trip_segments=trip_segments,
-            route_start_index=route_start_index,
-            public_route_start_index=public_route_start_index,
-            public_route_index=public_route_index,
-        )
-        alignment_rows.append(
-            _trace_alignment_record(
+        for window_index, trace_window in enumerate(_split_trace_windows(trace_frame)):
+            stats.traces_seen += 1
+            stats.trace_windows += 1
+            trace_window = trace_window.copy()
+            trace_window["derived_speed_mps"] = _derive_trace_speed(trace_window)
+            effective_start_date, used_date_override = _resolve_effective_start_date(
+                str(group_key[4]),
+                int(trace_window.iloc[0]["gps_timestamp"]),
+            )
+            if used_date_override:
+                stats.traces_with_effective_date_override += 1
+            resolution = _resolve_trace_alignment(
                 group_key=group_key,
-                resolution=resolution,
+                trip_segments=trip_segments,
+                route_start_index=route_start_index,
+                public_route_start_index=public_route_start_index,
+                public_route_index=public_route_index,
+                trace_frame=trace_window,
                 effective_start_date=effective_start_date,
             )
-        )
-        _update_alignment_stats(stats, resolution)
-        if resolution.bundle is None:
-            stats.traces_missing_trip_template += 1
-            continue
-        stats.traces_processed += 1
-        runs = _build_segment_runs_for_trace(
-            trace_frame,
-            bundle=resolution.bundle,
-            resolution=resolution,
-            effective_start_date=effective_start_date,
-            stats=stats,
-        )
-        rows.extend(_reconstruct_segments_from_runs(runs, stats=stats))
+            alignment_rows.append(
+                _trace_alignment_record(
+                    group_key=group_key,
+                    resolution=resolution,
+                    effective_start_date=effective_start_date,
+                )
+            )
+            _update_alignment_stats(stats, resolution)
+            runs: list[SegmentRun] = []
+            if resolution.bundle is None:
+                stats.traces_missing_trip_template += 1
+            else:
+                stats.traces_processed += 1
+                runs = _build_segment_runs_for_trace(
+                    trace_window,
+                    bundle=resolution.bundle,
+                    resolution=resolution,
+                    effective_start_date=effective_start_date,
+                    stats=stats,
+                )
+                rows.extend(_reconstruct_segments_from_runs(runs, stats=stats))
+            if audit_rows is not None and len(audit_rows) < AUDIT_TRACE_LIMIT:
+                audit_rows.append(
+                    _trace_audit_record(
+                        group_key=group_key,
+                        window_index=window_index,
+                        trace_frame=trace_window,
+                        resolution=resolution,
+                        effective_start_date=effective_start_date,
+                        runs=runs,
+                    )
+                )
 
     reconstructed_frame = pd.DataFrame(rows) if rows else pd.DataFrame(columns=OUTPUT_COLUMNS)
     alignment_frame = pd.DataFrame(alignment_rows) if alignment_rows else pd.DataFrame(columns=ALIGNMENT_SUMMARY_COLUMNS)
@@ -851,10 +1150,12 @@ def reconstruct_realtime_segments(
     report_path: str | Path,
     gtfs_static_dir: str | Path,
     max_service_dates: int = 0,
+    audit_path: str | Path = DEFAULT_AUDIT_PATH,
 ) -> dict[str, object]:
     resolved_input_dir = resolve_repo_path(str(input_dir))
     resolved_output_dir = resolve_repo_path(str(output_dir))
     resolved_report_path = resolve_repo_path(str(report_path))
+    resolved_audit_path = resolve_repo_path(str(audit_path))
 
     if not resolved_input_dir.exists():
         raise FileNotFoundError(
@@ -874,6 +1175,7 @@ def reconstruct_realtime_segments(
     alignment_output_dir = resolved_output_dir / "trace_alignment"
     alignment_output_dir.mkdir(parents=True, exist_ok=True)
     alignment_files: list[str] = []
+    audit_rows: list[dict[str, object]] = []
 
     service_date_dirs = sorted(resolved_input_dir.glob("service_date=*"))
     if max_service_dates > 0:
@@ -889,6 +1191,7 @@ def reconstruct_realtime_segments(
             public_route_start_index=public_route_start_index,
             public_route_index=public_route_index,
             stats=stats,
+            audit_rows=audit_rows,
         )
         stats.service_dates_processed += 1
         output_path = resolved_output_dir / f"service_date={service_date_value}.parquet"
@@ -914,6 +1217,7 @@ def reconstruct_realtime_segments(
         "report_path": str(resolved_report_path),
         "service_dates_processed": stats.service_dates_processed,
         "traces_seen": stats.traces_seen,
+        "trace_windows": stats.trace_windows,
         "traces_processed": stats.traces_processed,
         "traces_missing_trip_template": stats.traces_missing_trip_template,
         "traces_with_effective_date_override": stats.traces_with_effective_date_override,
@@ -922,6 +1226,8 @@ def reconstruct_realtime_segments(
         "public_route_start_matches": stats.public_route_start_matches,
         "ambiguous_public_route_matches": stats.ambiguous_public_route_matches,
         "unresolved_traces": stats.unresolved_traces,
+        "spatial_sequence_matches": stats.spatial_sequence_matches,
+        "traces_rejected_distance": stats.traces_rejected_distance,
         "inferred_snapshots": stats.inferred_snapshots,
         "segment_runs": stats.segment_runs,
         "reconstructed_segments": stats.reconstructed_segments,
@@ -934,8 +1240,20 @@ def reconstruct_realtime_segments(
         "alignment_files": alignment_files,
         "output_columns": OUTPUT_COLUMNS,
         "alignment_columns": ALIGNMENT_SUMMARY_COLUMNS,
+        "audit_path": str(resolved_audit_path),
+        "audit_trace_count": len(audit_rows),
     }
     _write_json(resolved_report_path, report)
+    _write_json(
+        resolved_audit_path,
+        {
+            "audit_version": "2.0.0",
+            "trace_count": len(audit_rows),
+            "required_manual_route_accuracy": 0.90,
+            "required_monotonic_progression": 0.95,
+            "traces": audit_rows,
+        },
+    )
     return report
 
 
@@ -947,6 +1265,7 @@ def main() -> None:
         report_path=args.report_path,
         gtfs_static_dir=args.gtfs_static_dir,
         max_service_dates=args.max_service_dates,
+        audit_path=args.audit_path,
     )
     print("Realtime segment reconstruction finished.")
     print(f"Input: {report['input_dir']}")
