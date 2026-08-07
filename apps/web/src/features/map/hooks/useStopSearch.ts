@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import type { StopSearchResult } from "@/features/map/domain/types"
+import { searchMockStops } from "@/features/map/services/stops/mockStopsService"
 import { searchStops } from "@/features/map/services/stops/stopsService"
 
 type UseStopSearchResult = {
@@ -10,9 +11,10 @@ type UseStopSearchResult = {
   errorMessage: string | null
 }
 
-const SEARCH_DEBOUNCE_MS = 450
 const MIN_SEARCH_QUERY_LENGTH = 2
 const STOP_SEARCH_CACHE_LIMIT = 100
+const USE_TEMPORARY_MOCK_RESULTS = true
+const SEARCH_DEBOUNCE_MS = USE_TEMPORARY_MOCK_RESULTS ? 180 : 450
 
 const sharedStopSearchCache = new Map<string, StopSearchResult[]>()
 
@@ -28,7 +30,10 @@ function readCachedStopSearchResults(query: string) {
   return cachedResults
 }
 
-function writeCachedStopSearchResults(query: string, results: StopSearchResult[]) {
+function writeCachedStopSearchResults(
+  query: string,
+  results: StopSearchResult[]
+) {
   const key = query.toLowerCase()
   sharedStopSearchCache.delete(key)
   sharedStopSearchCache.set(key, results)
@@ -43,7 +48,10 @@ function writeCachedStopSearchResults(query: string, results: StopSearchResult[]
   }
 }
 
-export function useStopSearch(query: string, enabled = true): UseStopSearchResult {
+export function useStopSearch(
+  query: string,
+  enabled = true
+): UseStopSearchResult {
   const activeQueryRef = useRef("")
   const [results, setResults] = useState<StopSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -79,7 +87,10 @@ export function useStopSearch(query: string, enabled = true): UseStopSearchResul
       setErrorMessage(null)
 
       try {
-        const nextResults = await searchStops(normalizedQuery, {
+        const stopSearch = USE_TEMPORARY_MOCK_RESULTS
+          ? searchMockStops
+          : searchStops
+        const nextResults = await stopSearch(normalizedQuery, {
           limit: 8,
           signal: controller.signal,
         })

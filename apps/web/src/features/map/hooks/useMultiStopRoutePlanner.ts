@@ -125,6 +125,7 @@ function createIdleRouteLeg(
     totalEtaMinutes: 0,
     totalDelayMinutes: 0,
     waitMinutes: 0,
+    transferCount: 0,
     status,
     errorMessage: null,
     lineCoordinates: [],
@@ -641,6 +642,31 @@ export function useMultiStopRoutePlanner() {
     })
   }, [])
 
+  const restoreWaypoint = useCallback(
+    (waypoint: WaypointField, requestedIndex: number) => {
+      const restoreInList = (currentWaypoints: WaypointField[]) => {
+        if (
+          currentWaypoints.length >= MAX_WAYPOINT_COUNT ||
+          currentWaypoints.some((current) => current.id === waypoint.id)
+        ) {
+          return currentWaypoints
+        }
+
+        const nextWaypoints = [...currentWaypoints]
+        const restoreIndex = Math.min(
+          Math.max(requestedIndex, DEFAULT_WAYPOINT_COUNT),
+          nextWaypoints.length
+        )
+        nextWaypoints.splice(restoreIndex, 0, waypoint)
+        return nextWaypoints
+      }
+
+      setWaypoints(restoreInList)
+      setRouteWaypoints(restoreInList)
+    },
+    []
+  )
+
   const reorderWaypoint = useCallback((activeId: string, overId: string) => {
     setWaypoints((currentWaypoints) =>
       reorderWaypointInList(currentWaypoints, activeId, overId)
@@ -668,6 +694,11 @@ export function useMultiStopRoutePlanner() {
     )
   }, [])
 
+  const restoreTrip = useCallback((restoredWaypoints: WaypointField[]) => {
+    setWaypoints([...restoredWaypoints])
+    setRouteWaypoints([...restoredWaypoints])
+  }, [])
+
   return {
     sidebarProps: {
       waypoints,
@@ -679,9 +710,11 @@ export function useMultiStopRoutePlanner() {
       onWaypointSelect: selectWaypointStop,
       onWaypointClear: clearWaypoint,
       onWaypointRemove: removeWaypoint,
+      onWaypointRestore: restoreWaypoint,
       onWaypointReorder: reorderWaypoint,
       onAddWaypoint: addWaypoint,
       onClearTrip: clearTrip,
+      onTripRestore: restoreTrip,
     },
     mapViewportProps: {
       waypointMarkers,

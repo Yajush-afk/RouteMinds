@@ -7,7 +7,7 @@
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: "Geist Variable", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -130,5 +130,40 @@
   html {
     @apply font-sans;
     overscroll-behavior: none;
+  }
+}
+
+@layer utilities {
+  .subtle-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .subtle-scrollbar:hover {
+    scrollbar-color: oklch(0.708 0 0 / 45%) transparent;
+  }
+
+  .subtle-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .subtle-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .subtle-scrollbar::-webkit-scrollbar-thumb {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background-color: transparent;
+    background-clip: content-box;
+  }
+
+  .subtle-scrollbar:hover::-webkit-scrollbar-thumb {
+    background-color: oklch(0.708 0 0 / 45%);
+  }
+
+  .subtle-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: oklch(0.556 0 0 / 65%);
   }
 }

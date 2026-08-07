@@ -68,7 +68,7 @@ function DesktopMapScreen() {
 
   return (
     <section className="h-screen w-full">
-      <SidebarProvider width="24rem" className="relative h-full">
+      <SidebarProvider width="26rem" className="relative h-full">
         <MapRouteSidebar {...sidebarProps} user={user} onSignOut={logout} />
         <SidebarInset className="bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_32%),linear-gradient(180deg,_#edf5ff_0%,_#f8fbff_24%,_#ffffff_100%)]">
           <MapViewport {...mapViewportProps} onMapReady={handleMapReady} />
